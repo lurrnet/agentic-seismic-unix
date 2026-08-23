@@ -12,7 +12,7 @@ COPY source/cwp_su_all_*.tgz /tmp/su.tgz
 RUN tar -xzf /tmp/su.tgz -C "${CWPROOT}" && rm /tmp/su.tgz
 WORKDIR ${CWPROOT}/src
 RUN test -f configs/Makefile.config_Linux_Ubuntu_22.04 && cp configs/Makefile.config_Linux_Ubuntu_22.04 Makefile.config
-RUN printf "y\nn\n" | make install
+RUN printf "y\n\ny\n" | make install
 RUN command -v segyread && command -v segyclean && command -v surange && command -v sufilter && command -v suwind && command -v sustrip
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt

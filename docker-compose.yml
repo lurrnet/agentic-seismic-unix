@@ -3,7 +3,7 @@ services:
     build:
       context: .
     image: seismic-agent-v0.2:arm64
-    container_name: seismic-agent-v0.2
+    container_name: agentic-seismic-unix
     restart: unless-stopped
     ports:
       - "8501:8501"

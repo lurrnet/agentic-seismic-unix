@@ -1,0 +1,20 @@
+name: sufilter
+display_name: Bandpass Filter
+description: Apply zero-phase polygonal frequency filtering to SU traces.
+category: filtering
+input_type: su
+output_type: su
+approval_level: processing
+parameters:
+  f1: {type: float, required: true, minimum: 0}
+  f2: {type: float, required: true, minimum: 0}
+  f3: {type: float, required: true, minimum: 0}
+  f4: {type: float, required: true, minimum: 0}
+validation:
+  ordered_frequencies: true
+  below_nyquist: f4
+execution:
+  executable: sufilter
+  argument_template:
+    - "f={f1},{f2},{f3},{f4}"
+    - "amps=0,1,1,0"

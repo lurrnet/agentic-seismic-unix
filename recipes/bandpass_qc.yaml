@@ -1,0 +1,10 @@
+name: bandpass_qc
+description: Inspect, filter, and QC a seismic dataset.
+steps:
+  - tool: inspect_dataset
+  - tool: inspect_frequency
+  - decision: recommend_bandpass
+  - approval: {required: true}
+  - tool: sufilter
+  - tool: compare_datasets
+  - decision: review_qc

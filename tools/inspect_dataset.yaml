@@ -1,0 +1,8 @@
+name: inspect_dataset
+display_name: Inspect Dataset
+description: Read basic dataset metadata and SU header ranges.
+category: inspection
+input_type: su
+output_type: json
+approval_level: auto
+parameters: {}

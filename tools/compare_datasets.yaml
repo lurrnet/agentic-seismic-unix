@@ -1,0 +1,11 @@
+name: compare_datasets
+display_name: Compare Datasets
+description: Compare before/after preview traces and spectrum metrics.
+category: qc
+input_type: su_pair
+output_type: json
+approval_level: auto
+parameters:
+  passband_low: {type: float, required: true}
+  passband_high: {type: float, required: true}
+  noise_low: {type: float, required: true}

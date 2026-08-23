@@ -25,11 +25,11 @@ def get_surange(path):
     return _decode(p.stdout)
 
 def load_preview_traces(path,metadata,max_traces=200):
-    max_traces=max(1,int(max_traces))
+    max_traces=None if max_traces is None else max(1,int(max_traces))
     sample_bytes=metadata.ns*4
     traces=[]
     with open(path,'rb') as fin:
-        for _ in range(max_traces):
+        while max_traces is None or len(traces)<max_traces:
             header=fin.read(240)
             if not header: break
             if len(header)<240: break

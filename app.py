@@ -9,7 +9,7 @@ from su.importer import segy_to_su
 from seismic.io import read_su_metadata,get_surange,load_preview_traces
 from seismic.qc import compare_filter_result
 from seismic.plotting import section_figure,spectrum_figure
-DATA_ROOT=Path('/data/projects'); TOOLS_DIR=Path('/app/tools'); PREVIEW_TRACES=200
+DATA_ROOT=Path('/data/projects'); TOOLS_DIR=Path('/app/tools'); PREVIEW_TRACES=None
 st.set_page_config(page_title='Seismic Agent V0.2',page_icon='〰️',layout='wide')
 st.title('Seismic Agent V0.2'); st.caption('Tool Registry + Validator + Workflow Engine + Project State + History')
 registry=ToolRegistry(TOOLS_DIR); executor=SUExecutor(registry)

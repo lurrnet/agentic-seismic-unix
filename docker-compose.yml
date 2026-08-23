@@ -6,7 +6,7 @@ services:
     container_name: seismic-agent-v0.2
     restart: unless-stopped
     ports:
-      - "8888:8888"
-    command: streamlit run app.py --server.port=8888 --server.address=0.0.0.0
+      - "8880:8880"
+    command: streamlit run app.py --server.port=8880 --server.address=0.0.0.0
     volumes:
       - ./data:/data

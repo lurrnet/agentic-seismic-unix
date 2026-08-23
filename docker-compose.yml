@@ -6,6 +6,6 @@ services:
     container_name: seismic-agent-v0.2
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8888:8888"
     volumes:
       - ./data:/data

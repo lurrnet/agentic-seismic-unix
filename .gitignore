@@ -1,6 +1,9 @@
 # Local files
 .local/
 
+# Seismic Unix tarball
+source/cwp_su_all_*.tgz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

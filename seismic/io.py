@@ -25,15 +25,16 @@ def get_surange(path):
     return _decode(p.stdout)
 
 def load_preview_traces(path,metadata,max_traces=200):
-    fin=open(path,'rb')
-    try:
-        p1=subprocess.Popen(['suwind',f'count={int(max_traces)}'],stdin=fin,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        assert p1.stdout is not None and p1.stderr is not None
-        p2=subprocess.Popen(['sustrip'],stdin=p1.stdout,stdout=subprocess.PIPE,stderr=subprocess.PIPE); p1.stdout.close()
-        out2,err2=p2.communicate(); err1=p1.stderr.read(); rc1=p1.wait()
-    finally: fin.close()
-    if rc1: raise SUExecutionError(f'suwind failed:\n{_decode(err1)}')
-    if p2.returncode: raise SUExecutionError(f'sustrip failed:\n{_decode(err2)}')
-    data=np.frombuffer(out2,dtype=np.float32); ntr=data.size//metadata.ns
-    if not ntr: raise ValueError('No complete traces extracted.')
-    return data[:ntr*metadata.ns].reshape(ntr,metadata.ns)
+    max_traces=max(1,int(max_traces))
+    sample_bytes=metadata.ns*4
+    traces=[]
+    with open(path,'rb') as fin:
+        for _ in range(max_traces):
+            header=fin.read(240)
+            if not header: break
+            if len(header)<240: break
+            samples=fin.read(sample_bytes)
+            if len(samples)<sample_bytes: break
+            traces.append(np.frombuffer(samples,dtype=np.float32).copy())
+    if not traces: raise ValueError('No complete traces extracted from the SU dataset.')
+    return np.stack(traces)

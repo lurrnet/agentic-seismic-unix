@@ -48,15 +48,19 @@ with t1:
         except Exception as e: st.error('Filtering failed.'); st.code(str(e))
 with t2:
     recs=hist.list(); filters=[r for r in recs if r.get('tool')=='sufilter']
-    if not filters:
-        tr=load_preview_traces(current,m,PREVIEW_TRACES); st.plotly_chart(section_figure(tr,m.dt_s,'Current dataset'),use_container_width=True); st.plotly_chart(spectrum_figure(tr,None,m.dt_s),use_container_width=True); st.info('Apply a filter to enable before/after QC.')
-    else:
-        r=filters[-1]; bp=Path(r['input']); ap=Path(r['output']); bm=read_su_metadata(bp); am=read_su_metadata(ap); before=load_preview_traces(bp,bm,PREVIEW_TRACES); after=load_preview_traces(ap,am,PREVIEW_TRACES)
-        l,rr=st.columns(2)
-        with l: st.plotly_chart(section_figure(before,bm.dt_s,'Before'),use_container_width=True)
-        with rr: st.plotly_chart(section_figure(after,am.dt_s,'After'),use_container_width=True)
-        st.plotly_chart(spectrum_figure(before,after,bm.dt_s),use_container_width=True)
-        pp=r['parameters']; qc=compare_filter_result(before,after,bm.dt_s,float(pp['f2']),float(pp['f3']),float(pp['f4'])); q1,q2,q3=st.columns(3); q1.metric('Signal retention',f'{qc["signal_retention"]*100:.1f}%'); q2.metric('High-frequency reduction',f'{qc["high_frequency_reduction"]*100:.1f}%'); q3.metric('RMS ratio',f'{qc["rms_ratio"]:.3f}')
+    try:
+        if not filters:
+            tr=load_preview_traces(current,m,PREVIEW_TRACES); st.plotly_chart(section_figure(tr,m.dt_s,'Current dataset'),use_container_width=True); st.plotly_chart(spectrum_figure(tr,None,m.dt_s),use_container_width=True); st.info('Apply a filter to enable before/after QC.')
+        else:
+            r=filters[-1]; bp=Path(r['input']); ap=Path(r['output']); bm=read_su_metadata(bp); am=read_su_metadata(ap); before=load_preview_traces(bp,bm,PREVIEW_TRACES); after=load_preview_traces(ap,am,PREVIEW_TRACES)
+            l,rr=st.columns(2)
+            with l: st.plotly_chart(section_figure(before,bm.dt_s,'Before'),use_container_width=True)
+            with rr: st.plotly_chart(section_figure(after,am.dt_s,'After'),use_container_width=True)
+            st.plotly_chart(spectrum_figure(before,after,bm.dt_s),use_container_width=True)
+            pp=r['parameters']; qc=compare_filter_result(before,after,bm.dt_s,float(pp['f2']),float(pp['f3']),float(pp['f4'])); q1,q2,q3=st.columns(3); q1.metric('Signal retention',f'{qc["signal_retention"]*100:.1f}%'); q2.metric('High-frequency reduction',f'{qc["high_frequency_reduction"]*100:.1f}%'); q3.metric('RMS ratio',f'{qc["rms_ratio"]:.3f}')
+    except Exception as e:
+        st.warning('QC preview could not be generated for the current dataset.')
+        st.code(str(e))
 with t3:
     st.code("SEG-Y Import\\n   ->\\nInspect metadata / spectrum\\n   ->\\nBandpass proposal\\n   ->\\nUser approval\\n   ->\\nTool Registry\\n   ->\\nValidator\\n   ->\\nWorkflow Engine\\n   ->\\nSU Executor\\n   ->\\nsufilter\\n   ->\\nQC / History"); st.markdown('**Registered tools**'); st.json(registry.list_tools())
 with t4:

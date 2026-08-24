@@ -31,6 +31,9 @@ def validate_parameters(tool_spec, parameters, context=None):
             raise ValidationError(f'{name} must be >= {spec["minimum"]}')
         if 'maximum' in spec and value > spec['maximum']:
             raise ValidationError(f'{name} must be <= {spec["maximum"]}')
+        if 'choices' in spec and value not in spec['choices']:
+            allowed = ', '.join(str(x) for x in spec['choices'])
+            raise ValidationError(f'{name} must be one of: {allowed}')
         out[name] = value
 
     validation = tool_spec.get('validation', {})

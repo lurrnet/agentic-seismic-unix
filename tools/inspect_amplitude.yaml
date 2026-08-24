@@ -1,0 +1,9 @@
+name: inspect_amplitude
+display_name: Inspect Amplitude
+description: Compute bounded amplitude statistics from preview traces.
+category: inspection
+input_type: su
+output_type: json
+approval_level: auto
+parameters:
+  max_traces: {type: int, default: 200, minimum: 1, maximum: 1000}

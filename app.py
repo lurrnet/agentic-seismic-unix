@@ -19,7 +19,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.6.2'
+VERSION = '0.6.3'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -176,6 +176,30 @@ def run_agent_turn(prompt, project, state, history):
         st.session_state.pending_action = result['pending_action']
 
 
+def probe_agent():
+    agent_ready = True
+    agent_error = None
+    provider_info = None
+    try:
+        provider_info = SeismicAgent().provider_info
+    except AgentConfigurationError as exc:
+        agent_ready = False
+        agent_error = str(exc)
+    except Exception as exc:
+        agent_ready = False
+        agent_error = str(exc)
+    return provider_info, agent_ready, agent_error
+
+
+for key, default in [
+    ('chat_messages', []),
+    ('pending_action', None),
+    ('last_tool_trace', []),
+    ('last_reflection', None),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
+
 agent_col, workspace_col = workstation_columns()
 
 if 'project_id' not in st.session_state:
@@ -189,7 +213,7 @@ if 'project_id' not in st.session_state:
     with workspace_col:
         with st.container(key='workspace_panel', border=False):
             st.title(f'Seismic Agent V{VERSION}')
-            st.caption('AI-native Seismic Unix workstation')
+            st.caption('AI-native Seismic Unix workstation · dual-panel UI')
             st.subheader('Open Project')
             uploaded = st.file_uploader(
                 'Upload a SEG-Y file',
@@ -198,7 +222,10 @@ if 'project_id' not in st.session_state:
             )
 
             if uploaded is None:
-                st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
+                st.info(
+                    'Upload a `.sgy` or `.segy` file to begin. '
+                    'The Agent panel will unlock after loading.'
+                )
                 st.stop()
 
             signature = f'{uploaded.name}:{uploaded.size}'
@@ -221,27 +248,7 @@ history = HistoryStore(project.history_dir / 'workflow.json')
 engine = WorkflowEngine(executor, history)
 current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
-
-for key, default in [
-    ('chat_messages', []),
-    ('pending_action', None),
-    ('last_tool_trace', []),
-    ('last_reflection', None),
-]:
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-agent_ready = True
-agent_error = None
-provider_info = None
-try:
-    provider_info = SeismicAgent().provider_info
-except AgentConfigurationError as exc:
-    agent_ready = False
-    agent_error = str(exc)
-except Exception as exc:
-    agent_ready = False
-    agent_error = str(exc)
+provider_info, agent_ready, agent_error = probe_agent()
 
 with agent_col:
     prompt, decision = render_agent_panel(
@@ -271,25 +278,21 @@ if decision == 'approve':
         })
         st.rerun()
     except Exception as exc:
-        with workspace_col:
-            st.error('Approved processing failed.')
-            st.code(str(exc))
+        st.error('Approved processing failed.')
+        st.code(str(exc))
 
 if prompt:
     if not agent_ready:
-        with workspace_col:
-            st.error(agent_error or 'Agent is not configured.')
+        st.error(agent_error or 'Agent is not configured.')
     else:
         try:
             run_agent_turn(prompt, project, state, history)
             st.rerun()
         except AgentConfigurationError as exc:
-            with workspace_col:
-                st.error(str(exc))
+            st.error(str(exc))
         except Exception as exc:
-            with workspace_col:
-                st.error('Agent request failed.')
-                st.code(str(exc))
+            st.error('Agent request failed.')
+            st.code(str(exc))
 
 state = project.load_state()
 current = Path(state.current_dataset)
@@ -298,7 +301,7 @@ metadata = read_su_metadata(current)
 with workspace_col:
     with st.container(key='workspace_panel', border=False):
         st.title(f'Seismic Agent V{VERSION}')
-        st.caption('Dual-panel workstation · persistent Agent panel · tabbed seismic workspace')
+        st.caption('Dual-panel AI seismic workstation · Agent + visualization workspace')
 
         workspace_tab, processing_tab, qc_tab, history_tab = st.tabs(
             ['Workspace', 'Processing', 'QC', 'History']
@@ -323,10 +326,10 @@ with workspace_col:
         with history_tab:
             render_history(state, history, registry)
 
-        if new_project_requested:
-            for key in [
-                'project_id', 'upload_signature', 'chat_messages', 'pending_action',
-                'last_tool_trace', 'last_reflection', 'workspace_page'
-            ]:
-                st.session_state.pop(key, None)
-            st.rerun()
+if new_project_requested:
+    for key in [
+        'project_id', 'upload_signature', 'chat_messages', 'pending_action',
+        'last_tool_trace', 'last_reflection', 'workspace_page'
+    ]:
+        st.session_state.pop(key, None)
+    st.rerun()

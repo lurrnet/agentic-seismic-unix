@@ -65,10 +65,22 @@ def render_agent_panel(
                     if dataset_loaded
                     else 'Upload a SEG-Y file to enable chat'
                 )
-                prompt = st.chat_input(
-                    placeholder,
-                    key='workstation_chat_input',
-                    disabled=disabled,
-                )
+
+                with st.form('agent_chat_form', clear_on_submit=True, border=False):
+                    prompt_text = st.text_area(
+                        'Message',
+                        placeholder=placeholder,
+                        label_visibility='collapsed',
+                        height=88,
+                        disabled=disabled,
+                    )
+                    submitted = st.form_submit_button(
+                        'Send',
+                        type='primary',
+                        use_container_width=True,
+                        disabled=disabled,
+                    )
+
+                prompt = prompt_text.strip() if submitted and prompt_text.strip() else None
 
     return prompt, decision

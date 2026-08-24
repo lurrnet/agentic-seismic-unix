@@ -19,7 +19,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.7.0'
+VERSION = '0.7.1'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -67,9 +67,8 @@ def reset_chat_for_project():
     st.session_state.chat_messages = [{
         'role': 'assistant',
         'content': (
-            'Dataset loaded. I can inspect sampling, frequency content, trace headers, '
-            'and amplitude statistics; propose bandpass filtering, gain, AGC, or trace '
-            'selection; and review the latest bandpass QC.'
+            'Dataset loaded. Ask me to inspect the data, inspect its frequency content, '
+            'recommend a bandpass filter, apply gain or AGC, select traces, or review the latest filter QC.'
         ),
     }]
     st.session_state.pending_action = None
@@ -77,18 +76,18 @@ def reset_chat_for_project():
     st.session_state.last_reflection = None
 
 
-def execute_pending_action(project, state, history, engine, action):
+def execute_pending_processing(project, state, history, engine, action):
     current = Path(state.current_dataset)
     if action.get('status') != 'pending_approval':
         raise ValueError('This action is no longer pending approval.')
     if Path(action['input']) != current:
         raise ValueError(
             'The project dataset changed after this proposal was created. '
-            'Ask the agent to inspect the current dataset and create a new proposal.'
+            'Ask the agent to inspect the current dataset and propose a new operation.'
         )
 
     tool_name = action['tool']
-    operation = action.get('operation') or tool_name
+    operation = action.get('operation', tool_name)
     out = project.next_output_path(operation)
     rec = engine.run_processing_step(
         state,
@@ -100,7 +99,6 @@ def execute_pending_action(project, state, history, engine, action):
     )
     state.current_step = rec['step_id']
     state.current_dataset = str(out)
-    state.metadata = read_su_metadata(out).to_dict()
     project.save_state(state)
     return rec, out
 
@@ -163,15 +161,6 @@ def run_reflection_after_filter(project, history, registry, out):
         )
 
 
-def processing_success_message(action, out):
-    display_name = action.get('display_name') or action.get('tool', 'Processing')
-    params = action.get('parameters') or {}
-    return (
-        f'Approved **{display_name}** executed successfully as `{out.name}`.\n\n'
-        f'Parameters: `{params}`. The new dataset is now the current project step.'
-    )
-
-
 def run_agent_turn(prompt, project, state, history):
     prior_history = list(st.session_state.chat_messages)
     st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
@@ -189,7 +178,6 @@ def run_agent_turn(prompt, project, state, history):
         st.session_state.pending_action = result['pending_action']
 
 
-# Initial state uses the same dual-panel workstation shell as the loaded state.
 if 'project_id' not in st.session_state:
     agent_col, workspace_col = workstation_columns()
 
@@ -268,29 +256,29 @@ with agent_col:
 
 if decision == 'reject':
     action = st.session_state.pending_action or {}
-    display_name = action.get('display_name') or action.get('tool', 'processing')
     st.session_state.pending_action = None
     st.session_state.chat_messages.append({
         'role': 'assistant',
-        'content': f'The pending **{display_name}** proposal was rejected and no processing was run.',
+        'content': f"The pending {action.get('display_name', 'processing')} proposal was rejected and no processing was run.",
     })
     st.rerun()
 
 if decision == 'approve':
     action = st.session_state.pending_action
     try:
-        rec, out = execute_pending_action(project, state, history, engine, action)
+        rec, out = execute_pending_processing(project, state, history, engine, action)
         st.session_state.pending_action = None
-
         if action.get('tool') == 'sufilter':
-            message = run_reflection_after_filter(project, history, registry, out)
+            completion_message = run_reflection_after_filter(project, history, registry, out)
         else:
+            completion_message = (
+                f"Approved **{action.get('display_name', action.get('tool', 'processing'))}** "
+                f"executed successfully as `{out.name}`."
+            )
             st.session_state.last_reflection = None
-            message = processing_success_message(action, out)
-
         st.session_state.chat_messages.append({
             'role': 'assistant',
-            'content': message,
+            'content': completion_message,
         })
         st.rerun()
     except Exception as exc:

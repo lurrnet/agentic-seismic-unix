@@ -5,6 +5,7 @@ category: amplitude
 input_type: su
 output_type: su
 approval_level: processing
+approval_policy: explicit_or_approval
 parameters:
   wagc: {type: float, required: true, minimum: 0.01, maximum: 10.0}
 execution:

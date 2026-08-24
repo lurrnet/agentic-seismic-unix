@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from .prompts import SYSTEM_PROMPT
 from .toolkit import TOOL_SCHEMAS, AgentToolkit
 from .provider_factory import create_provider
 from .providers.base import AgentProvider, AgentConfigurationError
+from .proposal_fallback import parse_proposal_from_text
 from .reflection import extract_json_object, ReflectionParseError
 
 
@@ -105,48 +105,6 @@ class SeismicAgent:
         return obj if isinstance(obj, dict) else None
 
     @staticmethod
-    def _extract_bandpass_from_text(text: str) -> dict[str, Any] | None:
-        labels = re.search(
-            r'f1\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*[,; ]+'
-            r'f2\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*[,; ]+'
-            r'f3\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*[,; ]+'
-            r'f4\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)',
-            text,
-            flags=re.IGNORECASE,
-        )
-        if labels:
-            vals = [float(x) for x in labels.groups()]
-            return {
-                'action': 'apply_bandpass_filter',
-                'parameters': {
-                    'f1': vals[0], 'f2': vals[1], 'f3': vals[2], 'f4': vals[3],
-                },
-                'reason': 'Bandpass recommendation parsed from the agent response.',
-                'parsed_from': 'labeled_text',
-            }
-
-        seq = re.search(
-            r'(?<![0-9.])'
-            r'([0-9]+(?:\.[0-9]+)?)\s*[-–—/]\s*'
-            r'([0-9]+(?:\.[0-9]+)?)\s*[-–—/]\s*'
-            r'([0-9]+(?:\.[0-9]+)?)\s*[-–—/]\s*'
-            r'([0-9]+(?:\.[0-9]+)?)\s*Hz\b',
-            text,
-            flags=re.IGNORECASE,
-        )
-        if seq:
-            vals = [float(x) for x in seq.groups()]
-            return {
-                'action': 'apply_bandpass_filter',
-                'parameters': {
-                    'f1': vals[0], 'f2': vals[1], 'f3': vals[2], 'f4': vals[3],
-                },
-                'reason': 'Bandpass recommendation parsed from the agent response.',
-                'parsed_from': 'frequency_sequence',
-            }
-        return None
-
-    @staticmethod
     def _strip_application_proposal(text: str) -> str:
         start_marker = '<SEISMIC_PROPOSAL>'
         end_marker = '</SEISMIC_PROPOSAL>'
@@ -212,7 +170,6 @@ class SeismicAgent:
         action = proposal.get('action')
         params = proposal.get('parameters')
         if not isinstance(params, dict):
-            # Backward compatibility with the v0.4-v0.6 flat bandpass envelope.
             params = proposal
         reason = proposal.get('reason') or 'Agent processing recommendation.'
 
@@ -308,8 +265,6 @@ class SeismicAgent:
             user=request_user,
         )
 
-        # Kept for compatibility if an OpenClaw backend emits client function calls
-        # despite application-routed mode.
         rounds = 0
         while rounds < max_tool_rounds:
             calls = [
@@ -358,8 +313,8 @@ class SeismicAgent:
 
         proposal = self._extract_application_proposal(text) if proposal_action else None
         proposal_source = 'structured_envelope' if proposal is not None else None
-        if proposal_action == 'apply_bandpass_filter' and proposal is None:
-            proposal = self._extract_bandpass_from_text(text)
+        if proposal_action is not None and proposal is None:
+            proposal = parse_proposal_from_text(proposal_action, text)
             if proposal is not None:
                 proposal_source = proposal.get('parsed_from', 'text_fallback')
 

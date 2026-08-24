@@ -3,43 +3,66 @@ import streamlit as st
 
 WORKSTATION_CSS = r"""
 <style>
-/* V0.6 dual-panel workstation shell. Keys become stable st-key-* classes. */
+/* V0.6.1: deterministic three-zone agent panel.
+   Only stable key-derived classes are used; no Streamlit data-testid selectors. */
 .st-key-agent_panel {
+    position: relative;
     height: calc(100vh - 2.5rem);
     min-height: 680px;
     overflow: hidden;
     border: 1px solid rgba(128, 128, 128, 0.22);
     border-radius: 0.75rem;
-    padding: 0.9rem 1rem 0.8rem 1rem;
+    padding: 0;
 }
 
-.st-key-agent_panel > div {
-    height: 100%;
+.st-key-agent_panel_stack {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
 }
 
-.st-key-agent_panel .st-key-agent_panel_stack {
-    height: 100%;
+/* Header stays at the top and is intentionally compact. */
+.st-key-agent_header {
+    position: absolute;
+    top: 0.8rem;
+    left: 1rem;
+    right: 1rem;
+    height: 7.5rem;
+    overflow: visible;
+    z-index: 3;
 }
 
-.st-key-agent_panel .st-key-agent_panel_stack > div {
-    height: 100%;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    gap: 0.6rem;
-}
-
+/* Conversation owns the middle of the panel and is the only scroll surface. */
 .st-key-agent_history {
+    position: absolute;
+    top: 8.7rem;
+    left: 1rem;
+    right: 1rem;
+    bottom: 13.2rem;
     min-height: 0;
-    height: 100%;
-    overflow-y: auto;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
     border-top: 1px solid rgba(128, 128, 128, 0.16);
     border-bottom: 1px solid rgba(128, 128, 128, 0.16);
-    padding: 0.5rem 0.15rem;
+    padding: 0.55rem 0.2rem 0.8rem 0.2rem;
 }
 
+/* Composer is pinned to the bottom and never participates in chat scrolling. */
 .st-key-agent_composer {
-    align-self: end;
-    padding-top: 0.1rem;
+    position: absolute;
+    left: 1rem;
+    right: 1rem;
+    bottom: 0.8rem;
+    height: 11.6rem;
+    overflow-y: auto;
+    z-index: 4;
+    padding-top: 0.35rem;
+    background: var(--background-color);
+}
+
+.st-key-agent_composer textarea {
+    min-height: 4.4rem !important;
 }
 
 .st-key-workspace_panel {
@@ -49,7 +72,12 @@ WORKSTATION_CSS = r"""
 @media (max-width: 1000px) {
     .st-key-agent_panel {
         height: 70vh;
-        min-height: 560px;
+        min-height: 600px;
+    }
+
+    .st-key-agent_history {
+        top: 8.7rem;
+        bottom: 13.2rem;
     }
 }
 </style>

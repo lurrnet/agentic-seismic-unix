@@ -9,10 +9,10 @@ def _number(value: str) -> float:
 
 
 def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
-    """Best-effort deterministic parser for OpenClaw prose proposals.
+    """Best-effort deterministic parser for structured processing parameters.
 
-    This never executes processing. Parsed values still pass through the normal
-    toolkit/registry validator before a pending approval action is created.
+    Parsed values never execute by themselves. They still pass through the
+    toolkit/registry validator before either direct execution or approval.
     """
     if action == 'apply_bandpass_filter':
         labels = re.search(
@@ -28,7 +28,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': {'f1': vals[0], 'f2': vals[1], 'f3': vals[2], 'f4': vals[3]},
-                'reason': 'Bandpass recommendation parsed from the agent response.',
+                'reason': 'Bandpass parameters parsed from text.',
                 'parsed_from': 'labeled_text',
             }
 
@@ -46,7 +46,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': {'f1': vals[0], 'f2': vals[1], 'f3': vals[2], 'f4': vals[3]},
-                'reason': 'Bandpass recommendation parsed from the agent response.',
+                'reason': 'Bandpass parameters parsed from text.',
                 'parsed_from': 'frequency_sequence',
             }
 
@@ -60,7 +60,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': {'wagc': float(explicit.group(1))},
-                'reason': 'AGC window parsed from the agent response.',
+                'reason': 'AGC window parsed from text.',
                 'parsed_from': 'wagc_label',
             }
 
@@ -74,7 +74,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': {'wagc': float(seconds.group(1))},
-                'reason': 'AGC window parsed from the agent response.',
+                'reason': 'AGC window parsed from text.',
                 'parsed_from': 'seconds_window',
             }
 
@@ -88,7 +88,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': {'wagc': float(milliseconds.group(1)) / 1000.0},
-                'reason': 'AGC window parsed from the agent response.',
+                'reason': 'AGC window parsed from text.',
                 'parsed_from': 'milliseconds_window',
             }
 
@@ -106,7 +106,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': values,
-                'reason': 'Gain parameters parsed from the agent response.',
+                'reason': 'Gain parameters parsed from text.',
                 'parsed_from': 'gain_labels',
             }
 
@@ -127,8 +127,46 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
             return {
                 'action': action,
                 'parameters': {'key': key_match.group(1).lower(), 'min': lo, 'max': hi},
-                'reason': 'Trace-selection bounds parsed from the agent response.',
+                'reason': 'Trace-selection bounds parsed from text.',
                 'parsed_from': 'header_range',
             }
 
     return None
+
+
+def parse_explicit_user_command(text: str) -> dict[str, Any] | None:
+    """Return a complete processing command only when the USER explicitly authorizes it.
+
+    This is deliberately stricter than the agent proposal parser. Recommendation
+    language never qualifies, and every parameter required for direct execution
+    must be present in the same user message.
+    """
+    lowered = text.lower()
+    if any(token in lowered for token in (
+        'recommend', 'suggest', 'what should', 'which should', 'what would',
+        'reasonable', 'appropriate', 'best ', 'should i',
+    )):
+        return None
+
+    action = None
+    if re.search(r'\b(?:apply|run|execute)\b.*\b(?:bandpass|filter)\b', lowered):
+        action = 'apply_bandpass_filter'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\bagc\b', lowered) or (
+        'automatic gain control' in lowered and re.search(r'\b(?:apply|run|execute)\b', lowered)
+    ):
+        action = 'apply_agc'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\bgain\b', lowered):
+        action = 'apply_gain'
+    elif re.search(r'\b(?:select|keep|retain|window)\b.*\b(?:trace|traces|offset|cdp|fldr)\b', lowered):
+        action = 'select_traces'
+
+    if action is None:
+        return None
+
+    parsed = parse_proposal_from_text(action, text)
+    if parsed is None:
+        return None
+
+    parsed['authorization'] = 'explicit_user_command'
+    parsed['reason'] = 'Explicit user command with complete parameters.'
+    return parsed

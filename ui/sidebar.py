@@ -1,7 +1,6 @@
 import streamlit as st
 
 from .components.proposal_card import render_proposal_card
-from .styles import apply_sidebar_chat_styles
 
 
 def render_sidebar(
@@ -12,14 +11,11 @@ def render_sidebar(
 ):
     """Render the persistent conversational sidebar.
 
-    V0.5.4 keeps the sidebar visible from first launch and turns it into a
-    full-height agent chat panel. Before a dataset is loaded, chat stays visible
-    but disabled; after loading, messages scroll while the composer stays at the
-    bottom of the sidebar.
+    V0.5.5 uses Streamlit's native stretch-height container for chat history.
+    The chat composer is deliberately the final sidebar element so it stays at
+    the bottom of the available sidebar layout.
     """
     with st.sidebar:
-        apply_sidebar_chat_styles()
-
         st.markdown('### Seismic Agent')
 
         if not dataset_loaded:
@@ -36,30 +32,8 @@ def render_sidebar(
         if dataset_loaded:
             decision = render_proposal_card(st.session_state.get('pending_action'))
 
-        # Flexible chat history area. CSS makes this consume the remaining height.
-        chat = st.container(border=False)
-        with chat:
-            st.markdown('<span id="agent-chat-history-marker"></span>', unsafe_allow_html=True)
-            if not dataset_loaded:
-                with st.chat_message('assistant'):
-                    st.markdown(
-                        'Load a SEG-Y dataset to start a seismic processing conversation.'
-                    )
-            else:
-                for message in st.session_state.get('chat_messages', [])[-50:]:
-                    with st.chat_message(message['role']):
-                        st.markdown(message['content'])
-
-        chat_enabled = dataset_loaded and agent_ready
-        prompt = st.chat_input(
-            'Ask about this dataset...'
-            if dataset_loaded
-            else 'Upload a SEG-Y file to enable chat',
-            key='sidebar_chat_input',
-            disabled=not chat_enabled,
-        )
-
-        # Keep diagnostic details available without consuming normal chat space.
+        # Diagnostics belong above the conversation so the composer can remain
+        # the final element in the sidebar.
         if dataset_loaded and (
             st.session_state.get('last_tool_trace')
             or st.session_state.get('last_reflection')
@@ -79,5 +53,36 @@ def render_sidebar(
                         st.caption(f"Confidence: {r.get('confidence')}")
                     if r.get('error'):
                         st.error(r['error'])
+
+        # Streamlit >=1.57 supports native stretch-height containers. This fills
+        # the remaining sidebar height and becomes the independent scroll surface
+        # for conversation history.
+        chat = st.container(
+            key='agent_chat_history',
+            height='stretch',
+            border=False,
+            gap='small',
+        )
+        with chat:
+            if not dataset_loaded:
+                with st.chat_message('assistant'):
+                    st.markdown(
+                        'Load a SEG-Y dataset to start a seismic processing conversation.'
+                    )
+            else:
+                for message in st.session_state.get('chat_messages', [])[-50:]:
+                    with st.chat_message(message['role']):
+                        st.markdown(message['content'])
+
+        # Keep this as the LAST sidebar element. In a stretch-height sidebar,
+        # the chat history consumes the flexible space and this stays below it.
+        chat_enabled = dataset_loaded and agent_ready
+        prompt = st.chat_input(
+            'Ask about this dataset...'
+            if dataset_loaded
+            else 'Upload a SEG-Y file to enable chat',
+            key='sidebar_chat_input',
+            disabled=not chat_enabled,
+        )
 
     return prompt, decision

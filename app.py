@@ -19,7 +19,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.6.0'
+VERSION = '0.6.1'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -176,17 +176,52 @@ def run_agent_turn(prompt, project, state, history):
         st.session_state.pending_action = result['pending_action']
 
 
-def reset_project_session():
-    for key in [
-        'project_id',
-        'upload_signature',
-        'chat_messages',
-        'pending_action',
-        'last_tool_trace',
-        'last_reflection',
-        'workspace_page',
-    ]:
-        st.session_state.pop(key, None)
+def render_open_project_workspace():
+    st.title(f'Seismic Agent V{VERSION}')
+    st.caption('AI-native Seismic Unix workstation · dual-panel UI')
+    st.subheader('Open Project')
+    uploaded = st.file_uploader(
+        'Upload a SEG-Y file',
+        type=['sgy', 'segy'],
+        help='SEG-Y is converted to SU inside the project workspace.',
+    )
+    if uploaded is None:
+        st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
+        return None
+    return uploaded
+
+
+def render_loaded_workspace(project, state, history, engine, registry):
+    current = Path(state.current_dataset)
+    metadata = read_su_metadata(current)
+
+    st.title(f'Seismic Agent V{VERSION}')
+    st.caption('Dual-panel workstation · Agent + seismic workspace')
+
+    workspace_tab, processing_tab, qc_tab, history_tab = st.tabs(
+        ['Workspace', 'Processing', 'QC', 'History']
+    )
+
+    new_project_requested = False
+    with workspace_tab:
+        new_project_requested = render_workspace(
+            project, state, metadata, history, current, PREVIEW_TRACES
+        )
+
+    with processing_tab:
+        render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
+
+    with qc_tab:
+        try:
+            render_qc(state, history, current, metadata, PREVIEW_TRACES)
+        except Exception as exc:
+            st.warning('QC page could not be rendered for the current dataset.')
+            st.code(str(exc))
+
+    with history_tab:
+        render_history(state, history, registry)
+
+    return new_project_requested
 
 
 for key, default in [
@@ -200,7 +235,7 @@ for key, default in [
 
 agent_col, workspace_col = workstation_columns()
 
-# First launch: preserve the final workstation geometry from the first frame.
+# First launch: keep the same workstation geometry but disable the Agent panel.
 if 'project_id' not in st.session_state:
     with agent_col:
         render_agent_panel(
@@ -211,42 +246,32 @@ if 'project_id' not in st.session_state:
 
     with workspace_col:
         with st.container(key='workspace_panel', border=False):
-            st.title(f'Seismic Agent V{VERSION}')
-            st.caption('AI-native Seismic Unix workstation · dual-panel UI')
-            st.subheader('Open Project')
-            uploaded = st.file_uploader(
-                'Upload a SEG-Y file',
-                type=['sgy', 'segy'],
-                help='SEG-Y is converted to SU inside the project workspace.',
-            )
-            st.info(
-                'Load a `.sgy` or `.segy` file to initialize the workspace. '
-                'The Agent panel will unlock after import.'
-            )
+            uploaded = render_open_project_workspace()
 
-            if uploaded is not None:
-                signature = f'{uploaded.name}:{uploaded.size}'
-                try:
-                    with st.spinner('Creating project and converting SEG-Y to SU...'):
-                        project, state = create_project(uploaded)
-                    st.session_state.upload_signature = signature
-                    st.session_state.project_id = project.project_id
-                    reset_chat_for_project()
-                    st.rerun()
-                except Exception as exc:
-                    st.error('Failed to initialize the project.')
-                    st.code(str(exc))
-    st.stop()
+    if uploaded is None:
+        st.stop()
+
+    signature = f'{uploaded.name}:{uploaded.size}'
+    try:
+        with workspace_col:
+            with st.spinner('Creating project and converting SEG-Y to SU...'):
+                project, state = create_project(uploaded)
+        st.session_state.upload_signature = signature
+        st.session_state.project_id = project.project_id
+        reset_chat_for_project()
+        st.rerun()
+    except Exception as exc:
+        with workspace_col:
+            st.error('Failed to initialize the project.')
+            st.code(str(exc))
+        st.stop()
 
 
 project = Project(DATA_ROOT, st.session_state.project_id)
 state = project.load_state()
 history = HistoryStore(project.history_dir / 'workflow.json')
 engine = WorkflowEngine(executor, history)
-current = Path(state.current_dataset)
-metadata = read_su_metadata(current)
 
-# Probe provider once for Agent-panel status. Manual processing remains usable if unavailable.
 agent_ready = True
 agent_error = None
 provider_info = None
@@ -267,39 +292,6 @@ with agent_col:
         dataset_loaded=True,
     )
 
-with workspace_col:
-    with st.container(key='workspace_panel', border=False):
-        st.title(f'Seismic Agent V{VERSION}')
-        st.caption('Dual-panel workstation · Agent + seismic workspace')
-
-        workspace_tab, processing_tab, qc_tab, history_tab = st.tabs(
-            ['Workspace', 'Processing', 'QC', 'History']
-        )
-
-        new_project_requested = False
-        with workspace_tab:
-            new_project_requested = render_workspace(
-                project, state, metadata, history, current, PREVIEW_TRACES
-            )
-
-        with processing_tab:
-            render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
-
-        with qc_tab:
-            try:
-                render_qc(state, history, current, metadata, PREVIEW_TRACES)
-            except Exception as exc:
-                st.warning('QC page could not be rendered for the current dataset.')
-                st.code(str(exc))
-
-        with history_tab:
-            render_history(state, history, registry)
-
-if new_project_requested:
-    reset_project_session()
-    st.rerun()
-
-# Actions are handled after both panels render; any state-changing action reruns the shell.
 if decision == 'reject':
     st.session_state.pending_action = None
     st.session_state.chat_messages.append({
@@ -320,18 +312,38 @@ if decision == 'approve':
         })
         st.rerun()
     except Exception as exc:
-        st.error('Approved processing failed.')
-        st.code(str(exc))
+        with agent_col:
+            st.error('Approved processing failed.')
+            st.code(str(exc))
 
 if prompt:
     if not agent_ready:
-        st.error(agent_error or 'Agent is not configured.')
+        with agent_col:
+            st.error(agent_error or 'Agent is not configured.')
     else:
         try:
             run_agent_turn(prompt, project, state, history)
             st.rerun()
         except AgentConfigurationError as exc:
-            st.error(str(exc))
+            with agent_col:
+                st.error(str(exc))
         except Exception as exc:
-            st.error('Agent request failed.')
-            st.code(str(exc))
+            with agent_col:
+                st.error('Agent request failed.')
+                st.code(str(exc))
+
+state = project.load_state()
+
+with workspace_col:
+    with st.container(key='workspace_panel', border=False):
+        new_project_requested = render_loaded_workspace(
+            project, state, history, engine, registry
+        )
+
+if new_project_requested:
+    for key in [
+        'project_id', 'upload_signature', 'chat_messages', 'pending_action',
+        'last_tool_trace', 'last_reflection', 'workspace_page'
+    ]:
+        st.session_state.pop(key, None)
+    st.rerun()

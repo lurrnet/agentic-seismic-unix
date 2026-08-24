@@ -402,11 +402,11 @@ and that the supplied client-side tools are available.
 This avoids the failure mode where the model replies that it cannot access a
 dataset even though the application has already loaded one.
 
-## v0.3.4 OpenClaw compatibility change
+## v0.3.5 OpenClaw compatibility change
 
 OpenClaw's `/v1/responses` endpoint enforces pinned/required client tool calls: if the selected backend agent does not emit a matching structured `function_call`, the Gateway returns HTTP 502. Some OpenClaw backend/model combinations may therefore fail even though the Gateway accepted the tool schema.
 
-V0.3.4 defaults OpenClaw to:
+V0.3.5 defaults OpenClaw to:
 
 ```yaml
 openclaw:
@@ -433,3 +433,8 @@ openclaw:
 ```
 
 For production deployments, `application_routed` is the recommended default.
+
+
+## V0.3.5 hotfix
+
+Re-export `AgentConfigurationError` from `agent.seismic_agent` for compatibility with `app.py`.

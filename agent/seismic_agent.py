@@ -6,7 +6,7 @@ from typing import Any
 from .prompts import SYSTEM_PROMPT
 from .toolkit import TOOL_SCHEMAS, AgentToolkit
 from .provider_factory import create_provider
-from .providers.base import AgentProvider
+from .providers.base import AgentProvider, AgentConfigurationError
 
 
 class SeismicAgent:

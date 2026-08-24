@@ -19,7 +19,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.6.4'
+VERSION = '0.6.5'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -294,9 +294,6 @@ current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
 
 with workspace_col:
-    st.title(f'Seismic Agent V{VERSION}')
-    st.caption('Dual-panel workstation · persistent Agent rail · tabbed seismic workspace')
-
     workspace_tab, processing_tab, qc_tab, history_tab = st.tabs(
         ['Workspace', 'Processing', 'QC', 'History']
     )

@@ -13,7 +13,7 @@ def render_agent_panel(
     with st.container(key='agent_panel', border=False):
         with st.container(key='agent_panel_stack', border=False):
             with st.container(key='agent_header', border=False):
-                st.markdown('### Seismic Agent')
+                st.markdown('### Agentic SeismicUnix')
                 if not dataset_loaded:
                     st.caption('Waiting for dataset')
                     st.info('Upload a SEG-Y file in the workspace to enable the agent.')

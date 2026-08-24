@@ -19,8 +19,8 @@ DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
 
-st.set_page_config(page_title='Seismic Agent V0.3.2', page_icon='〰️', layout='wide')
-st.title('Seismic Agent V0.3.2')
+st.set_page_config(page_title='Seismic Agent V0.3.3', page_icon='〰️', layout='wide')
+st.title('Seismic Agent V0.3.3')
 st.caption('Dual-provider Chat Agent (OpenClaw default / OpenAI optional) + approval-gated SU processing')
 
 registry = ToolRegistry(TOOLS_DIR)

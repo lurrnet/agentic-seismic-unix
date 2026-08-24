@@ -13,6 +13,37 @@ class SeismicAgent:
     def __init__(self, provider: AgentProvider | None = None):
         self.provider = provider or create_provider()
 
+    @staticmethod
+    def _initial_tool_choice(user_text: str) -> dict[str, str] | str:
+        """Choose a deterministic first inspection tool for data-specific requests.
+
+        OpenClaw supports client-side function tools, but with tool_choice=auto a
+        model is still allowed to answer without calling one. For seismic data
+        questions we require evidence first, so obvious inspection intents are
+        pinned to the appropriate read-only tool.
+        """
+        text = user_text.lower()
+
+        if any(token in text for token in (
+            "frequency", "spectrum", "spectral", "bandpass",
+            "filter recommendation", "recommend a filter", "recommend filter",
+        )):
+            return {"type": "function", "name": "inspect_frequency"}
+
+        if any(token in text for token in (
+            "review the filter", "filter result", "filtering result",
+            "did the filter", "compare datasets", "compare the result",
+        )):
+            return {"type": "function", "name": "compare_datasets"}
+
+        if any(token in text for token in (
+            "inspect", "dataset", "data set", "what do you see",
+            "tell me what you see", "sampling", "trace count", "surange",
+        )):
+            return {"type": "function", "name": "inspect_dataset"}
+
+        return "auto"
+
     @property
     def provider_info(self) -> dict[str, Any]:
         return self.provider.info()
@@ -46,10 +77,22 @@ class SeismicAgent:
         else:
             request_input = input_items
 
+        project_id = getattr(getattr(toolkit, "project", None), "project_id", "unknown")
+        current_dataset = str(getattr(toolkit, "current_path", "unknown"))
+        runtime_context = (
+            "\n\nRuntime context supplied by the seismic application:\n"
+            f"- A seismic dataset IS currently loaded for project {project_id}.\n"
+            f"- Current dataset: {current_dataset}.\n"
+            "- The client-side function tools listed in this request ARE available to you.\n"
+            "- Do not ask the user to attach or load the dataset when an inspection tool can read it.\n"
+            "- For data-specific claims, call the appropriate inspection tool and ground the answer in its result."
+        )
+
         create_kwargs = {
-            "instructions": SYSTEM_PROMPT,
+            "instructions": SYSTEM_PROMPT + runtime_context,
             "input": request_input,
             "tools": TOOL_SCHEMAS,
+            "tool_choice": self._initial_tool_choice(user_text),
         }
         if request_user is not None:
             create_kwargs["user"] = request_user
@@ -89,10 +132,11 @@ class SeismicAgent:
                 })
 
             followup_kwargs = {
-                "instructions": SYSTEM_PROMPT,
+                "instructions": SYSTEM_PROMPT + runtime_context,
                 "previous_response_id": response.id,
                 "input": outputs,
                 "tools": TOOL_SCHEMAS,
+                "tool_choice": "auto",
             }
             if request_user is not None:
                 followup_kwargs["user"] = request_user

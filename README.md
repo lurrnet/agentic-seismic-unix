@@ -1,8 +1,8 @@
-# Seismic Agent V0.3.2
+# Seismic Agent V0.3.3
 
-V0.3.2 builds on V0.3 and adds a **dual-provider agent runtime**. The default deployment uses a local OpenClaw Gateway; direct OpenAI Responses API access remains available as an explicit deployment option. The deterministic Seismic Unix execution path and human approval gate are unchanged.
+V0.3.3 builds on V0.3 and adds a **dual-provider agent runtime**. The default deployment uses a local OpenClaw Gateway; direct OpenAI Responses API access remains available as an explicit deployment option. The deterministic Seismic Unix execution path and human approval gate are unchanged.
 
-## What V0.3.2 adds
+## What V0.3.3 adds
 
 The new Chat Agent can use four structured tools:
 
@@ -359,7 +359,7 @@ Accept / propose adjusted filter
 At that point the application starts to become genuinely iterative rather than only conversational.
 
 
-## OpenClaw input-schema fix in V0.3.2
+## OpenClaw input-schema fix in V0.3.3
 
 V0.3.1 replayed ChatGPT/OpenAI-style easy message objects to the OpenClaw
 `/v1/responses` endpoint. Some OpenClaw versions reject that shape with:
@@ -368,7 +368,7 @@ V0.3.1 replayed ChatGPT/OpenAI-style easy message objects to the OpenClaw
 400 input: Invalid input
 ```
 
-V0.3.2 uses the documented OpenResponses string input for each new OpenClaw
+V0.3.3 uses the documented OpenResponses string input for each new OpenClaw
 turn and supplies a stable per-project `user` key so the Gateway can preserve
 session context. Tool continuations still use `function_call_output` with
 `previous_response_id`. OpenAI direct mode continues to use explicit message
@@ -382,3 +382,22 @@ curl -sS http://127.0.0.1:18789/v1/responses \
   -H "Content-Type: application/json" \
   -d '{"model":"openclaw/default","input":"hello"}'
 ```
+
+
+## V0.3.3 OpenClaw tool-selection fix
+
+OpenClaw supports caller-supplied client function tools, but `tool_choice: auto`
+allows the underlying model to answer without calling one. For explicit seismic
+data requests, V0.3.3 pins the first read-only tool deterministically:
+
+- dataset/general inspection -> `inspect_dataset`
+- spectrum/frequency/filter recommendation -> `inspect_frequency`
+- review of a completed filter -> `compare_datasets`
+
+After the first tool result, the agent returns to `tool_choice: auto`, allowing
+it to explain the evidence or propose the approval-gated bandpass tool. The
+runtime prompt also explicitly tells the model that a project dataset is loaded
+and that the supplied client-side tools are available.
+
+This avoids the failure mode where the model replies that it cannot access a
+dataset even though the application has already loaded one.

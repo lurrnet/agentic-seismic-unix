@@ -20,3 +20,8 @@ Both providers expose the same Responses-style function-calling loop, so the sei
 - `apply_bandpass_filter` — proposal only; requires UI approval
 
 The provider never receives arbitrary shell access. Approved processing still flows through the application's `WorkflowEngine -> Validator -> SUExecutor` path.
+
+
+## V0.4 reflection path
+
+`SeismicAgent.review_latest_filter()` receives deterministic QC from `AgentToolkit.compare_datasets()` plus a residual frequency summary for the current filtered dataset. It asks the selected provider for a small JSON decision (`accept` or `adjust`). `adjust` is converted into the existing approval-gated `sufilter` proposal only after application-side validation.

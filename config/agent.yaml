@@ -16,3 +16,8 @@ openclaw:
 openai:
   model: gpt-5.6
   api_key_env: OPENAI_API_KEY
+
+reflection:
+  enabled: true
+  auto_after_agent_filter: true
+  max_preview_traces: 200

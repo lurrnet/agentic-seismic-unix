@@ -1,10 +1,17 @@
 name: bandpass_qc
-description: Inspect, filter, and QC a seismic dataset.
+version: 0.4
+description: Inspect a dataset, apply a human-approved bandpass filter, run deterministic QC, and reflect on the result.
 steps:
   - tool: inspect_dataset
   - tool: inspect_frequency
   - decision: recommend_bandpass
-  - approval: {required: true}
+  - approval:
+      required: true
   - tool: sufilter
   - tool: compare_datasets
-  - decision: review_qc
+  - decision: qc_reflection
+    outcomes:
+      - accept
+      - adjust
+  - approval:
+      required_if: adjust

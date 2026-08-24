@@ -2,6 +2,23 @@
 
 V0.3.3 builds on V0.3 and adds a **dual-provider agent runtime**. The default deployment uses a local OpenClaw Gateway; direct OpenAI Responses API access remains available as an explicit deployment option. The deterministic Seismic Unix execution path and human approval gate are unchanged.
 
+## V0.4: automatic QC reflection
+
+After an agent-proposed filter is approved and successfully executed, V0.4 automatically:
+
+```text
+sufilter
+  -> deterministic before/after QC
+  -> agent reflection
+  -> ACCEPT or ADJUST
+  -> human approval required for any adjustment
+```
+
+The reflection step does not use forced OpenClaw client-function calling. The seismic application computes QC evidence itself, then asks the configured provider (OpenClaw by default, OpenAI optional) to interpret that evidence. If the provider recommends adjusted filter corners, the application validates them and creates a normal pending approval; it never automatically runs the second filter.
+
+If the LLM reflection fails, the successfully produced SU output is retained and the QC tab still works. Reflection failure never rolls back processing.
+
+
 ## What V0.3.3 adds
 
 The new Chat Agent can use four structured tools:
@@ -402,11 +419,11 @@ and that the supplied client-side tools are available.
 This avoids the failure mode where the model replies that it cannot access a
 dataset even though the application has already loaded one.
 
-## v0.3.5 OpenClaw compatibility change
+## v0.4 OpenClaw compatibility change
 
 OpenClaw's `/v1/responses` endpoint enforces pinned/required client tool calls: if the selected backend agent does not emit a matching structured `function_call`, the Gateway returns HTTP 502. Some OpenClaw backend/model combinations may therefore fail even though the Gateway accepted the tool schema.
 
-V0.3.5 defaults OpenClaw to:
+V0.4 defaults OpenClaw to:
 
 ```yaml
 openclaw:
@@ -435,6 +452,11 @@ openclaw:
 For production deployments, `application_routed` is the recommended default.
 
 
-## V0.3.5 hotfix
+## V0.4 hotfix
 
 Re-export `AgentConfigurationError` from `agent.seismic_agent` for compatibility with `app.py`.
+
+
+### QC metric correction in V0.4
+
+Before/after signal-retention and high-frequency-reduction ratios are now computed from **unnormalized** mean amplitude spectra. Plotting remains independently normalized for visual comparison. This prevents display normalization from distorting quantitative reflection metrics.

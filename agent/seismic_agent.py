@@ -7,6 +7,7 @@ from .prompts import SYSTEM_PROMPT
 from .toolkit import TOOL_SCHEMAS, AgentToolkit
 from .provider_factory import create_provider
 from .providers.base import AgentProvider, AgentConfigurationError
+from .reflection import extract_json_object, ReflectionParseError
 
 
 class SeismicAgent:
@@ -248,6 +249,148 @@ class SeismicAgent:
             "provider": self.provider.name,
             "model": self.provider.model,
             "provider_info": self.provider.info(),
+        }
+
+
+    def review_latest_filter(
+        self,
+        toolkit: AgentToolkit,
+        *,
+        max_traces: int = 200,
+    ) -> dict[str, Any]:
+        """Run deterministic QC, then ask the configured agent provider to reflect.
+
+        This method never executes another processing step. If the model recommends
+        an adjustment, it is converted into the same approval-gated pending action
+        used elsewhere in the application.
+        """
+        qc = toolkit.compare_datasets()
+        if qc.get("status") != "success":
+            return {
+                "status": "not_available",
+                "text": qc.get("message", "QC comparison is not available."),
+                "decision": "review_only",
+                "pending_action": None,
+                "qc": qc,
+            }
+
+        # Inspect the current (filtered) dataset so the reflection sees both the
+        # before/after QC metrics and the residual frequency distribution.
+        try:
+            after_frequency = toolkit.inspect_frequency({"max_traces": max_traces})
+        except Exception as exc:
+            after_frequency = {"status": "error", "error": str(exc)}
+
+        runtime_context = self._runtime_context(toolkit)
+        request_user = f"seismic-project-{getattr(toolkit.project, 'project_id', 'default')}"
+
+        reflection_prompt = (
+            "You are reviewing the result of an already executed Seismic Unix bandpass filter.\n"
+            "The application, not the model, computed the evidence below.\n"
+            "Decide whether the latest result should be ACCEPTED or whether a revised four-corner "
+            "bandpass should be PROPOSED for human approval.\n\n"
+            "Important constraints:\n"
+            "- Do not claim to visually inspect plots; use only the supplied metrics.\n"
+            "- Be conservative. A filter can reduce out-of-band energy while also damaging useful signal.\n"
+            "- If evidence is insufficient or ambiguous, choose ACCEPT rather than inventing an adjustment.\n"
+            "- If proposing an adjustment, require 0 <= f1 < f2 < f3 < f4 < Nyquist.\n"
+            "- The adjustment will NOT execute automatically; it only becomes a pending user-approved proposal.\n"
+            "- Return JSON only, with exactly this shape:\n"
+            '{"decision":"accept|adjust","summary":"short user-facing summary",'
+            '"reason":"evidence-based reason","confidence":"low|medium|high",'
+            '"adjusted_filter":null_or_{"f1":number,"f2":number,"f3":number,"f4":number}}\n\n'
+            f"QC_EVIDENCE:\n{json.dumps(qc, ensure_ascii=False, indent=2)}\n\n"
+            f"FILTERED_DATA_FREQUENCY_EVIDENCE:\n{json.dumps(after_frequency, ensure_ascii=False, indent=2)}"
+        )
+
+        kwargs: dict[str, Any] = {
+            "instructions": SYSTEM_PROMPT + runtime_context,
+            "input": reflection_prompt,
+        }
+        if self.provider.name == "openclaw":
+            kwargs["user"] = request_user
+
+        response = self.provider.create_response(**kwargs)
+        raw_text = (response.output_text or "").strip()
+
+        try:
+            parsed = extract_json_object(raw_text)
+        except ReflectionParseError as exc:
+            return {
+                "status": "unstructured",
+                "text": raw_text or "The agent returned no reflection text.",
+                "decision": "review_only",
+                "reason": str(exc),
+                "confidence": "low",
+                "pending_action": None,
+                "qc": qc,
+                "after_frequency": after_frequency,
+                "raw_response": raw_text,
+            }
+
+        decision = str(parsed.get("decision", "accept")).strip().lower()
+        if decision not in {"accept", "adjust"}:
+            decision = "accept"
+
+        summary = str(parsed.get("summary") or "QC review completed.").strip()
+        reason = str(parsed.get("reason") or "").strip()
+        confidence = str(parsed.get("confidence") or "low").strip().lower()
+        if confidence not in {"low", "medium", "high"}:
+            confidence = "low"
+
+        pending_action = None
+        validation_error = None
+        if decision == "adjust":
+            adjusted = parsed.get("adjusted_filter")
+            if isinstance(adjusted, dict):
+                proposal_args = {
+                    "f1": adjusted.get("f1"),
+                    "f2": adjusted.get("f2"),
+                    "f3": adjusted.get("f3"),
+                    "f4": adjusted.get("f4"),
+                    "reason": reason or "QC reflection recommended an adjusted bandpass.",
+                }
+                try:
+                    proposal_result = toolkit.propose_bandpass(proposal_args)
+                    pending_action = toolkit.pending_action
+                except Exception as exc:
+                    validation_error = str(exc)
+                    decision = "accept"
+                    pending_action = None
+            else:
+                validation_error = "Agent selected adjust but did not provide adjusted_filter."
+                decision = "accept"
+
+        text = summary
+        if reason:
+            text += f"\n\nReason: {reason}"
+        text += f"\n\nReflection decision: **{decision.upper()}** · confidence: **{confidence}**."
+        if pending_action is not None:
+            p = pending_action["parameters"]
+            text += (
+                "\n\nSuggested follow-up filter (requires approval): "
+                f"**{p['f1']:g} - {p['f2']:g} - {p['f3']:g} - {p['f4']:g} Hz**."
+            )
+        if validation_error:
+            text += (
+                "\n\nThe proposed adjustment failed application validation, so no new processing "
+                f"proposal was created: `{validation_error}`"
+            )
+
+        return {
+            "status": "success",
+            "text": text,
+            "decision": decision,
+            "summary": summary,
+            "reason": reason,
+            "confidence": confidence,
+            "pending_action": pending_action,
+            "qc": qc,
+            "after_frequency": after_frequency,
+            "raw_response": raw_text,
+            "validation_error": validation_error,
+            "provider": self.provider.name,
+            "model": self.provider.model,
         }
 
     def run_turn(

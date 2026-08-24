@@ -19,12 +19,19 @@ DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
 
-st.set_page_config(page_title='Seismic Agent V0.3.5', page_icon='〰️', layout='wide')
-st.title('Seismic Agent V0.3.5')
-st.caption('Dual-provider Chat Agent (OpenClaw default / OpenAI optional) + approval-gated SU processing')
+st.set_page_config(page_title='Seismic Agent V0.4', page_icon='〰️', layout='wide')
+st.title('Seismic Agent V0.4')
+st.caption('Dual-provider Chat Agent + approval-gated SU processing + automatic QC reflection')
 
 registry = ToolRegistry(TOOLS_DIR)
 executor = SUExecutor(registry)
+
+
+def get_reflection_config():
+    try:
+        return (load_agent_config().get('reflection') or {})
+    except Exception:
+        return {}
 
 
 def create_project(uploaded):
@@ -58,6 +65,7 @@ def reset_chat_for_project():
     }]
     st.session_state.pending_action = None
     st.session_state.last_tool_trace = []
+    st.session_state.last_reflection = None
 
 
 def execute_pending_filter(p, s, hist, eng, action):
@@ -116,6 +124,8 @@ if 'pending_action' not in st.session_state:
     st.session_state.pending_action = None
 if 'last_tool_trace' not in st.session_state:
     st.session_state.last_tool_trace = []
+if 'last_reflection' not in st.session_state:
+    st.session_state.last_reflection = None
 
 chat_tab, process_tab, qc_tab, workflow_tab, history_tab = st.tabs(
     ['Chat Agent', 'Process', 'QC', 'Workflow', 'History']
@@ -206,12 +216,73 @@ with chat_tab:
                     with st.spinner('Running approved sufilter...'):
                         rec, out = execute_pending_filter(p, s, hist, eng, action)
                     st.session_state.pending_action = None
+
+                    # v0.4: deterministic QC + provider reflection can run automatically
+                    # after an agent-approved filter. A suggested adjustment is still
+                    # approval-gated and is never executed here.
+                    reflection_message = (
+                        f"Approved filter executed successfully as `{out.name}`."
+                    )
+                    reflection_cfg = get_reflection_config()
+                    auto_reflect = bool(
+                        reflection_cfg.get('enabled', True)
+                        and reflection_cfg.get('auto_after_agent_filter', True)
+                    )
+                    try:
+                        if not auto_reflect:
+                            raise RuntimeError('__REFLECTION_DISABLED__')
+                        refreshed_state = p.load_state()
+                        reflection_toolkit = AgentToolkit(
+                            p, refreshed_state, hist, registry, preview_traces=int(reflection_cfg.get('max_preview_traces', 200))
+                        )
+                        reflection_agent = SeismicAgent()
+                        with st.spinner('Running automatic QC reflection...'):
+                            reflection = reflection_agent.review_latest_filter(
+                                reflection_toolkit,
+                                max_traces=int(reflection_cfg.get('max_preview_traces', 200)),
+                            )
+                        st.session_state.last_reflection = reflection
+                        if reflection.get('pending_action') is not None:
+                            st.session_state.pending_action = reflection['pending_action']
+                        reflection_message += "\n\n" + reflection['text']
+
+                        hist.append({
+                            'step_id': refreshed_state.current_step,
+                            'parent_step': refreshed_state.current_step,
+                            'tool': 'qc_reflection',
+                            'input': str(out),
+                            'output': None,
+                            'parameters': {},
+                            'reason': reflection.get('reason', ''),
+                            'status': reflection.get('status', 'success'),
+                            'decision': reflection.get('decision'),
+                            'confidence': reflection.get('confidence'),
+                            'qc': reflection.get('qc'),
+                            'provider': reflection.get('provider'),
+                            'model': reflection.get('model'),
+                        })
+                    except Exception as reflection_exc:
+                        if str(reflection_exc) == '__REFLECTION_DISABLED__':
+                            st.session_state.last_reflection = None
+                            reflection_message += (
+                                "\n\nAutomatic QC reflection is disabled in `config/agent.yaml`."
+                            )
+                        else:
+                            # The SU processing result remains valid even if the LLM
+                            # reflection fails. Do not roll back successful processing.
+                            st.session_state.last_reflection = {
+                                'status': 'error',
+                                'decision': 'review_only',
+                                'error': str(reflection_exc),
+                            }
+                            reflection_message += (
+                                "\n\nThe filter completed, but automatic QC reflection failed: "
+                                f"`{reflection_exc}`. The QC tab remains available."
+                            )
+
                     st.session_state.chat_messages.append({
                         'role': 'assistant',
-                        'content': (
-                            f"Approved filter executed successfully as `{out.name}`. "
-                            'Ask me to review the filter result and I will run the QC comparison.'
-                        ),
+                        'content': reflection_message,
                     })
                     st.rerun()
                 except Exception as e:
@@ -229,6 +300,17 @@ with chat_tab:
         if st.session_state.last_tool_trace:
             with st.expander('Last agent tool trace'):
                 st.json(st.session_state.last_tool_trace)
+
+        if st.session_state.last_reflection:
+            with st.expander('Latest QC reflection', expanded=True):
+                reflection = st.session_state.last_reflection
+                st.markdown(f"**Decision:** {str(reflection.get('decision', 'review_only')).upper()}")
+                if reflection.get('confidence'):
+                    st.caption(f"Confidence: {reflection.get('confidence')}")
+                if reflection.get('qc'):
+                    st.json(reflection.get('qc'))
+                if reflection.get('error'):
+                    st.error(reflection.get('error'))
 
 with process_tab:
     a, b, c, d = st.columns(4)
@@ -335,7 +417,15 @@ with workflow_tab:
         '   ->\n'
         'sufilter\n'
         '   ->\n'
-        'QC / History'
+        'Deterministic QC metrics\n'
+        '   ->\n'
+        'Agent reflection\n'
+        '   ->\n'
+        'Accept OR adjusted proposal\n'
+        '   ->\n'
+        'Human approval if adjusted\n'
+        '   ->\n'
+        'History'
     )
     st.markdown('**Registered processing/tool specs**')
     st.json(registry.list_tools())

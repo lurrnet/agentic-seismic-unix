@@ -462,14 +462,14 @@ Re-export `AgentConfigurationError` from `agent.seismic_agent` for compatibility
 Before/after signal-retention and high-frequency-reduction ratios are now computed from **unnormalized** mean amplitude spectra. Plotting remains independently normalized for visual comparison. This prevents display normalization from distorting quantitative reflection metrics.
 
 
-## v0.4.2 OpenClaw proposal bridge fix
+## v0.5 OpenClaw proposal bridge fix
 
 In `openclaw.tool_strategy: application_routed` mode, read-only evidence and bandpass proposal creation are both application-routed. OpenClaw no longer needs to emit a native client function call for `apply_bandpass_filter`. When the user explicitly asks for a filter recommendation, the model returns a marked JSON proposal envelope; the application parses it, validates `f1 < f2 < f3 < f4 < Nyquist`, and creates the normal human-approval-gated pending action.
 
 If the proposed frequency values look geophysically unexpected, first check the displayed sample interval and Nyquist. All proposal frequencies are interpreted in Hz and are rejected automatically if they violate the dataset Nyquist limit.
 
 
-## v0.4.2 proposal bridge hardening
+## v0.5 proposal bridge hardening
 
 OpenClaw application-routed mode no longer requires the model to emit the
 `<SEISMIC_PROPOSAL>` envelope perfectly. For explicit bandpass recommendation
@@ -477,3 +477,50 @@ turns, the application can also parse common prose forms such as
 `8-15-50-60 Hz`, `8 / 15 / 50 / 60 Hz`, or labeled `f1=...` values. Parsed
 values still pass through the normal dataset-aware validator and only create
 a pending action; they never execute processing automatically.
+
+
+## V0.5 — Workstation UI
+
+V0.5 is primarily a UI/layout release. The processing and agent safety model from
+V0.4.2 is retained.
+
+### Sidebar responsibilities
+
+- project context and current dataset
+- page navigation
+- persistent Seismic Agent chat
+- pending processing approval / rejection
+- latest tool trace and QC reflection
+
+### Main workspace pages
+
+- **Workspace** — full-width current seismic section, spectrum, project summary
+- **Processing** — manual bandpass controls plus input preview
+- **QC** — before/after seismic, spectrum, metrics, agent review
+- **History** — processing timeline, detailed provenance, project state, tool specs
+
+The design rule is:
+
+```text
+Sidebar = decisions + conversation + navigation
+Main area = seismic data + plots + QC
+```
+
+### UI source layout
+
+```text
+ui/
+├── sidebar.py
+├── workspace_page.py
+├── processing_page.py
+├── qc_page.py
+├── history_page.py
+└── components/
+    ├── project_summary.py
+    └── proposal_card.py
+```
+
+No new Seismic Unix processing commands are introduced in V0.5. The existing
+OpenClaw/OpenAI provider selection, application-routed OpenClaw compatibility,
+proposal validation, human approval gate, provenance, and automatic QC reflection
+are preserved.

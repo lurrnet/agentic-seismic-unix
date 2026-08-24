@@ -18,7 +18,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.5.3'
+VERSION = '0.5.4'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None

@@ -3,8 +3,8 @@ import streamlit as st
 
 WORKSTATION_CSS = r"""
 <style>
-/* V0.6.3: make the LEFT STREAMLIT COLUMN the sticky element.
-   Sticky must live at the same layout level as the scrolling workspace column. */
+/* V0.6.4: sticky left column + explicit viewport-height agent panel.
+   Do not rely on percentage-height inheritance through Streamlit wrappers. */
 
 div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
     align-items: flex-start !important;
@@ -15,17 +15,15 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     position: sticky !important;
     top: 1.25rem !important;
     align-self: flex-start !important;
-    height: calc(100vh - 2.5rem) !important;
-    max-height: calc(100vh - 2.5rem) !important;
     overflow: visible !important;
     z-index: 20;
 }
 
-/* The panel itself now simply fills its sticky column. */
+/* Explicit height prevents the panel from collapsing inside Streamlit wrappers. */
 .st-key-agent_panel {
     position: relative;
-    height: 100%;
-    min-height: 0;
+    height: calc(100vh - 2.5rem);
+    min-height: 680px;
     overflow: hidden;
     border: 1px solid rgba(128, 128, 128, 0.22);
     border-radius: 0.75rem;
@@ -38,7 +36,6 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     overflow: hidden;
 }
 
-/* Header stays at the top and is intentionally compact. */
 .st-key-agent_header {
     position: absolute;
     top: 0.8rem;
@@ -49,7 +46,6 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     z-index: 3;
 }
 
-/* Conversation owns the middle and is the only scroll surface on the left. */
 .st-key-agent_history {
     position: absolute;
     top: 8.7rem;
@@ -65,7 +61,6 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     padding: 0.55rem 0.2rem 0.8rem 0.2rem;
 }
 
-/* Composer stays pinned to the bottom of the viewport-height left column. */
 .st-key-agent_composer {
     position: absolute;
     left: 1rem;
@@ -86,17 +81,14 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     min-width: 0;
 }
 
-/* On narrow screens Streamlit stacks columns; disable sticky there. */
 @media (max-width: 1000px) {
     div[data-testid="stColumn"]:has(.st-key-agent_panel) {
         position: relative !important;
         top: auto !important;
-        height: 70vh !important;
-        max-height: none !important;
     }
 
     .st-key-agent_panel {
-        height: 100%;
+        height: 70vh;
         min-height: 600px;
     }
 }

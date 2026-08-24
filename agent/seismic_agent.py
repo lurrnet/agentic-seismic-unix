@@ -33,11 +33,28 @@ class SeismicAgent:
                 input_items.append({"role": role, "content": content})
         input_items.append({"role": "user", "content": user_text})
 
-        response = self.provider.create_response(
-            instructions=SYSTEM_PROMPT,
-            input=input_items,
-            tools=TOOL_SCHEMAS,
-        )
+        # OpenClaw's OpenResponses endpoint is stricter than OpenAI's SDK
+        # about array-item input schemas. For OpenClaw, send the current user
+        # turn as the documented string input and let the Gateway maintain
+        # per-project conversational state via the OpenResponses `user` key.
+        # OpenAI direct mode keeps the explicit message-history array.
+        request_user = None
+        if self.provider.name == "openclaw":
+            request_input = user_text
+            project_id = getattr(getattr(toolkit, "project", None), "project_id", "default")
+            request_user = f"seismic-project-{project_id}"
+        else:
+            request_input = input_items
+
+        create_kwargs = {
+            "instructions": SYSTEM_PROMPT,
+            "input": request_input,
+            "tools": TOOL_SCHEMAS,
+        }
+        if request_user is not None:
+            create_kwargs["user"] = request_user
+
+        response = self.provider.create_response(**create_kwargs)
 
         tool_trace: list[dict[str, Any]] = []
         rounds = 0
@@ -71,12 +88,16 @@ class SeismicAgent:
                     "output": json.dumps(result, ensure_ascii=False),
                 })
 
-            response = self.provider.create_response(
-                instructions=SYSTEM_PROMPT,
-                previous_response_id=response.id,
-                input=outputs,
-                tools=TOOL_SCHEMAS,
-            )
+            followup_kwargs = {
+                "instructions": SYSTEM_PROMPT,
+                "previous_response_id": response.id,
+                "input": outputs,
+                "tools": TOOL_SCHEMAS,
+            }
+            if request_user is not None:
+                followup_kwargs["user"] = request_user
+
+            response = self.provider.create_response(**followup_kwargs)
 
         if rounds >= max_tool_rounds and any(
             getattr(item, "type", None) == "function_call" for item in response.output

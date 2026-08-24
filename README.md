@@ -1,8 +1,8 @@
-# Seismic Agent V0.3.1
+# Seismic Agent V0.3.2
 
-V0.3.1 builds on V0.3 and adds a **dual-provider agent runtime**. The default deployment uses a local OpenClaw Gateway; direct OpenAI Responses API access remains available as an explicit deployment option. The deterministic Seismic Unix execution path and human approval gate are unchanged.
+V0.3.2 builds on V0.3 and adds a **dual-provider agent runtime**. The default deployment uses a local OpenClaw Gateway; direct OpenAI Responses API access remains available as an explicit deployment option. The deterministic Seismic Unix execution path and human approval gate are unchanged.
 
-## What V0.3.1 adds
+## What V0.3.2 adds
 
 The new Chat Agent can use four structured tools:
 
@@ -357,3 +357,28 @@ Accept / propose adjusted filter
 ```
 
 At that point the application starts to become genuinely iterative rather than only conversational.
+
+
+## OpenClaw input-schema fix in V0.3.2
+
+V0.3.1 replayed ChatGPT/OpenAI-style easy message objects to the OpenClaw
+`/v1/responses` endpoint. Some OpenClaw versions reject that shape with:
+
+```text
+400 input: Invalid input
+```
+
+V0.3.2 uses the documented OpenResponses string input for each new OpenClaw
+turn and supplies a stable per-project `user` key so the Gateway can preserve
+session context. Tool continuations still use `function_call_output` with
+`previous_response_id`. OpenAI direct mode continues to use explicit message
+history.
+
+A minimal Gateway smoke test is:
+
+```bash
+curl -sS http://127.0.0.1:18789/v1/responses \
+  -H "Authorization: Bearer $OPENCLAW_GATEWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openclaw/default","input":"hello"}'
+```

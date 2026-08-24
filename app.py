@@ -18,7 +18,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.5.2'
+VERSION = '0.5.3'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -27,7 +27,7 @@ st.set_page_config(
     page_title=f'Seismic Agent V{VERSION}',
     page_icon='〰️',
     layout='wide',
-    initial_sidebar_state='expanded',
+    initial_sidebar_state=600,
 )
 
 registry = ToolRegistry(TOOLS_DIR)

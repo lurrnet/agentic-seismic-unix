@@ -19,8 +19,8 @@ DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
 
-st.set_page_config(page_title='Seismic Agent V0.4.1', page_icon='〰️', layout='wide')
-st.title('Seismic Agent V0.4.1')
+st.set_page_config(page_title='Seismic Agent V0.4.2', page_icon='〰️', layout='wide')
+st.title('Seismic Agent V0.4.2')
 st.caption('Dual-provider Chat Agent + approval-gated SU processing + automatic QC reflection')
 
 registry = ToolRegistry(TOOLS_DIR)

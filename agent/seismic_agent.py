@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .prompts import SYSTEM_PROMPT
@@ -79,6 +80,57 @@ class SeismicAgent:
         if not isinstance(obj, dict):
             return None
         return obj
+
+    @staticmethod
+    def _extract_bandpass_from_text(text: str) -> dict[str, Any] | None:
+        """Best-effort deterministic fallback for OpenClaw prose recommendations.
+
+        Accept common forms such as:
+          8-15-50-60 Hz
+          8 / 15 / 50 / 60 Hz
+          f1=8, f2=15, f3=50, f4=60
+
+        The returned values are still passed through the normal validator before
+        a pending processing action can be created.
+        """
+        # Prefer explicit f1/f2/f3/f4 labels when present.
+        labels = re.search(
+            r"f1\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*[,; ]+"
+            r"f2\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*[,; ]+"
+            r"f3\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*[,; ]+"
+            r"f4\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if labels:
+            vals = [float(x) for x in labels.groups()]
+            return {
+                "action": "apply_bandpass_filter",
+                "f1": vals[0], "f2": vals[1], "f3": vals[2], "f4": vals[3],
+                "reason": "Bandpass recommendation parsed from the agent response.",
+                "parsed_from": "labeled_text",
+            }
+
+        # Then accept a compact four-corner sequence followed by Hz.
+        seq = re.search(
+            r"(?<![0-9.])"
+            r"([0-9]+(?:\.[0-9]+)?)\s*[-–—/]\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*[-–—/]\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*[-–—/]\s*"
+            r"([0-9]+(?:\.[0-9]+)?)\s*Hz\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if seq:
+            vals = [float(x) for x in seq.groups()]
+            return {
+                "action": "apply_bandpass_filter",
+                "f1": vals[0], "f2": vals[1], "f3": vals[2], "f4": vals[3],
+                "reason": "Bandpass recommendation parsed from the agent response.",
+                "parsed_from": "frequency_sequence",
+            }
+
+        return None
 
     @staticmethod
     def _strip_application_proposal(text: str) -> str:
@@ -235,6 +287,12 @@ class SeismicAgent:
         # structured recommendation into the SAME validator-backed pending
         # action used by native function-calling providers.
         proposal = self._extract_application_proposal(text) if wants_proposal else None
+        proposal_source = "structured_envelope" if proposal is not None else None
+        if wants_proposal and proposal is None:
+            proposal = self._extract_bandpass_from_text(text)
+            if proposal is not None:
+                proposal_source = proposal.get("parsed_from", "text_fallback")
+
         if proposal is not None:
             try:
                 if proposal.get("action") != "apply_bandpass_filter":
@@ -254,10 +312,22 @@ class SeismicAgent:
                 })
                 clean_text = self._strip_application_proposal(text)
                 p = toolkit.pending_action["parameters"]
-                text = (clean_text +
-                        f"\n\nA validated pending filter proposal was created: "
-                        f"**{p['f1']:g} / {p['f2']:g} / {p['f3']:g} / {p['f4']:g} Hz**. "
-                        "It will not run until you approve it in the UI.").strip()
+                # If the fallback prose parser was needed, replace potentially
+                # contradictory model language (for example, claims that the
+                # action tool is unavailable) with an application-authored status.
+                if proposal_source != "structured_envelope":
+                    text = (
+                        f"The agent recommended **{p['f1']:g} / {p['f2']:g} / "
+                        f"{p['f3']:g} / {p['f4']:g} Hz**. "
+                        "The application parsed and validated those four corners and created "
+                        "a pending filter proposal. No processing has been executed yet. "
+                        "Approve it in the UI to run sufilter."
+                    )
+                else:
+                    text = (clean_text +
+                            f"\n\nA validated pending filter proposal was created: "
+                            f"**{p['f1']:g} / {p['f2']:g} / {p['f3']:g} / {p['f4']:g} Hz**. "
+                            "It will not run until you approve it in the UI.").strip()
             except Exception as exc:
                 clean_text = self._strip_application_proposal(text)
                 text = (clean_text +

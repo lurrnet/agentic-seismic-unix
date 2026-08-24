@@ -1,6 +1,7 @@
 import streamlit as st
 
 from .components.proposal_card import render_proposal_card
+from .styles import apply_sidebar_chat_styles
 
 
 def render_sidebar(
@@ -11,11 +12,14 @@ def render_sidebar(
 ):
     """Render the persistent conversational sidebar.
 
-    V0.5.2 keeps the sidebar visible from first launch. Before a dataset is loaded,
-    the chat UI is present but disabled; project metadata and dataset controls stay
-    in the main workspace.
+    V0.5.4 keeps the sidebar visible from first launch and turns it into a
+    full-height agent chat panel. Before a dataset is loaded, chat stays visible
+    but disabled; after loading, messages scroll while the composer stays at the
+    bottom of the sidebar.
     """
     with st.sidebar:
+        apply_sidebar_chat_styles()
+
         st.markdown('### Seismic Agent')
 
         if not dataset_loaded:
@@ -32,16 +36,17 @@ def render_sidebar(
         if dataset_loaded:
             decision = render_proposal_card(st.session_state.get('pending_action'))
 
-        # Give most of the sidebar to chat. Evidence and plots stay in the main workspace.
-        chat = st.container(height=520)
+        # Flexible chat history area. CSS makes this consume the remaining height.
+        chat = st.container(border=False)
         with chat:
+            st.markdown('<span id="agent-chat-history-marker"></span>', unsafe_allow_html=True)
             if not dataset_loaded:
                 with st.chat_message('assistant'):
                     st.markdown(
                         'Load a SEG-Y dataset to start a seismic processing conversation.'
                     )
             else:
-                for message in st.session_state.get('chat_messages', [])[-20:]:
+                for message in st.session_state.get('chat_messages', [])[-50:]:
                     with st.chat_message(message['role']):
                         st.markdown(message['content'])
 

@@ -18,7 +18,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.5'
+VERSION = '0.5.1'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -175,17 +175,19 @@ def run_agent_turn(prompt, project, state, history):
         st.session_state.pending_action = result['pending_action']
 
 
-# Initial state: keep upload in sidebar so the main workspace stays clean.
+# Initial state: keep the sidebar free for chat; open a dataset from the main area.
 if 'project_id' not in st.session_state:
     st.title(f'Seismic Agent V{VERSION}')
     st.caption('AI-native Seismic Unix workstation')
-    with st.sidebar:
-        st.header('Open Project')
-        uploaded = st.file_uploader('Upload a SEG-Y file', type=['sgy', 'segy'])
-        st.caption('SEG-Y is converted to SU inside the project workspace.')
+    st.subheader('Open Project')
+    uploaded = st.file_uploader(
+        'Upload a SEG-Y file',
+        type=['sgy', 'segy'],
+        help='SEG-Y is converted to SU inside the project workspace.',
+    )
 
     if uploaded is None:
-        st.info('Upload a `.sgy` or `.segy` file from the sidebar to begin.')
+        st.info('Upload a `.sgy` or `.segy` file to begin.')
         st.stop()
 
     signature = f'{uploaded.name}:{uploaded.size}'
@@ -231,24 +233,13 @@ except Exception as exc:
     agent_ready = False
     agent_error = str(exc)
 
-page, prompt, decision, new_project_requested = render_sidebar(
-    state,
-    metadata,
+prompt, decision = render_sidebar(
     provider_info,
     agent_ready=agent_ready,
     agent_error=agent_error,
 )
 
-# Sidebar actions are handled before rendering the main page so the right-hand workspace
-# always reflects the current project state after rerun.
-if new_project_requested:
-    for key in [
-        'project_id', 'upload_signature', 'chat_messages', 'pending_action',
-        'last_tool_trace', 'last_reflection', 'workspace_page'
-    ]:
-        st.session_state.pop(key, None)
-    st.rerun()
-
+# Handle sidebar decisions before rendering the main tabs so plots reflect the latest state.
 if decision == 'reject':
     st.session_state.pending_action = None
     st.session_state.chat_messages.append({
@@ -291,17 +282,35 @@ current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
 
 st.title(f'Seismic Agent V{VERSION}')
-st.caption('Workstation UI · sidebar navigation/chat · full-width seismic visualization')
+st.caption('Workstation UI · persistent sidebar chat · tabbed full-width seismic workspace')
 
-if page == 'Processing':
+workspace_tab, processing_tab, qc_tab, history_tab = st.tabs(
+    ['Workspace', 'Processing', 'QC', 'History']
+)
+
+new_project_requested = False
+with workspace_tab:
+    new_project_requested = render_workspace(
+        project, state, metadata, history, current, PREVIEW_TRACES
+    )
+
+with processing_tab:
     render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
-elif page == 'QC':
+
+with qc_tab:
     try:
         render_qc(state, history, current, metadata, PREVIEW_TRACES)
     except Exception as exc:
         st.warning('QC page could not be rendered for the current dataset.')
         st.code(str(exc))
-elif page == 'History':
+
+with history_tab:
     render_history(state, history, registry)
-else:
-    render_workspace(project, state, metadata, history, current, PREVIEW_TRACES)
+
+if new_project_requested:
+    for key in [
+        'project_id', 'upload_signature', 'chat_messages', 'pending_action',
+        'last_tool_trace', 'last_reflection', 'workspace_page'
+    ]:
+        st.session_state.pop(key, None)
+    st.rerun()

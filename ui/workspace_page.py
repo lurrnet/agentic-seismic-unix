@@ -6,8 +6,16 @@ from seismic.plotting import section_figure, spectrum_figure
 
 
 def render_workspace(project, state, metadata, history, current_path, preview_traces=None):
-    st.header('Workspace')
-    st.caption(f'Current dataset: {Path(state.current_dataset).name}')
+    top_left, top_right = st.columns([5, 1])
+    with top_left:
+        st.header('Workspace')
+        st.caption(f'Current dataset: {Path(state.current_dataset).name}')
+    with top_right:
+        new_project = st.button(
+            'Load new dataset',
+            use_container_width=True,
+            key='workspace_load_new_dataset',
+        )
 
     a, b, c, d = st.columns(4)
     a.metric('Samples / trace', f'{metadata.ns:,}')
@@ -32,7 +40,10 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
     recs = history.list()
     filters = [r for r in recs if r.get('tool') == 'sufilter' and r.get('status') == 'success']
     st.subheader('Processing status')
-    st.write(f"Imported dataset: **Yes** · Successful bandpass steps: **{len(filters)}** · Current step: **{state.current_step}**")
+    st.write(
+        f"Imported dataset: **Yes** · Successful bandpass steps: **{len(filters)}** "
+        f"· Current step: **{state.current_step}**"
+    )
 
     with st.expander('Dataset headers (surange)'):
         try:
@@ -48,3 +59,5 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
             '        -> Deterministic QC -> Agent Reflection\n'
             '        -> Accept or approval-gated adjustment'
         )
+
+    return new_project

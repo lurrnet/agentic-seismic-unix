@@ -1,5 +1,11 @@
 # Seismic Agent V0.3.3
 
+## V0.5.1 UI refinement
+
+V0.5.1 reserves the sidebar for the persistent Seismic Agent conversation and approval decisions. Project context and dataset controls are no longer duplicated in the sidebar. Main navigation uses Streamlit tabs: `Workspace`, `Processing`, `QC`, and `History`. The `Load new dataset` control lives on the Workspace page.
+
+The attached user-provided `.gitignore` replaces the package's previous `.gitignore` unchanged.
+
 V0.3.3 builds on V0.3 and adds a **dual-provider agent runtime**. The default deployment uses a local OpenClaw Gateway; direct OpenAI Responses API access remains available as an explicit deployment option. The deterministic Seismic Unix execution path and human approval gate are unchanged.
 
 ## V0.4: automatic QC reflection
@@ -462,14 +468,14 @@ Re-export `AgentConfigurationError` from `agent.seismic_agent` for compatibility
 Before/after signal-retention and high-frequency-reduction ratios are now computed from **unnormalized** mean amplitude spectra. Plotting remains independently normalized for visual comparison. This prevents display normalization from distorting quantitative reflection metrics.
 
 
-## v0.5 OpenClaw proposal bridge fix
+## v0.5.1 OpenClaw proposal bridge fix
 
 In `openclaw.tool_strategy: application_routed` mode, read-only evidence and bandpass proposal creation are both application-routed. OpenClaw no longer needs to emit a native client function call for `apply_bandpass_filter`. When the user explicitly asks for a filter recommendation, the model returns a marked JSON proposal envelope; the application parses it, validates `f1 < f2 < f3 < f4 < Nyquist`, and creates the normal human-approval-gated pending action.
 
 If the proposed frequency values look geophysically unexpected, first check the displayed sample interval and Nyquist. All proposal frequencies are interpreted in Hz and are rejected automatically if they violate the dataset Nyquist limit.
 
 
-## v0.5 proposal bridge hardening
+## v0.5.1 proposal bridge hardening
 
 OpenClaw application-routed mode no longer requires the model to emit the
 `<SEISMIC_PROPOSAL>` envelope perfectly. For explicit bandpass recommendation
@@ -479,9 +485,9 @@ values still pass through the normal dataset-aware validator and only create
 a pending action; they never execute processing automatically.
 
 
-## V0.5 — Workstation UI
+## V0.5.1 — Workstation UI
 
-V0.5 is primarily a UI/layout release. The processing and agent safety model from
+V0.5.1 is primarily a UI/layout release. The processing and agent safety model from
 V0.4.2 is retained.
 
 ### Sidebar responsibilities
@@ -520,7 +526,7 @@ ui/
     └── proposal_card.py
 ```
 
-No new Seismic Unix processing commands are introduced in V0.5. The existing
+No new Seismic Unix processing commands are introduced in V0.5.1. The existing
 OpenClaw/OpenAI provider selection, application-routed OpenClaw compatibility,
 proposal validation, human approval gate, provenance, and automatic QC reflection
 are preserved.

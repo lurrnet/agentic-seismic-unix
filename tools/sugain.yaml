@@ -1,0 +1,17 @@
+name: sugain
+display_name: Apply Gain
+description: Apply deterministic time/power gain and optional clipping with sugain.
+category: amplitude
+input_type: su
+output_type: su
+approval_level: processing
+parameters:
+  tpow: {type: float, default: 0.0, minimum: -5.0, maximum: 5.0}
+  gpow: {type: float, default: 1.0, minimum: 0.1, maximum: 5.0}
+  qclip: {type: float, default: 1.0, minimum: 0.0, maximum: 1.0}
+execution:
+  executable: sugain
+  argument_template:
+    - "tpow={tpow}"
+    - "gpow={gpow}"
+    - "qclip={qclip}"

@@ -370,7 +370,6 @@ if prompt:
             )
             st.rerun()
         except Exception as exc:
-            st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
             st.session_state.chat_messages.append({
                 'role': 'assistant',
                 'content': (

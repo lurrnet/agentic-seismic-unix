@@ -6,7 +6,7 @@ from typing import Any
 from .prompts import SYSTEM_PROMPT
 from .toolkit import TOOL_SCHEMAS, AgentToolkit
 from .provider_factory import create_provider
-from .providers.base import AgentProvider, AgentConfigurationError
+from .providers.base import AgentProvider
 
 
 class SeismicAgent:
@@ -14,47 +14,166 @@ class SeismicAgent:
         self.provider = provider or create_provider()
 
     @staticmethod
-    def _initial_tool_choice(user_text: str) -> dict[str, str] | str:
-        """Choose a deterministic first inspection tool for data-specific requests.
-
-        OpenClaw supports client-side function tools, but with tool_choice=auto a
-        model is still allowed to answer without calling one. For seismic data
-        questions we require evidence first, so obvious inspection intents are
-        pinned to the appropriate read-only tool.
-        """
+    def _route_read_tool(user_text: str) -> str | None:
         text = user_text.lower()
-
-        if any(token in text for token in (
-            "frequency", "spectrum", "spectral", "bandpass",
-            "filter recommendation", "recommend a filter", "recommend filter",
-        )):
-            return {"type": "function", "name": "inspect_frequency"}
 
         if any(token in text for token in (
             "review the filter", "filter result", "filtering result",
             "did the filter", "compare datasets", "compare the result",
         )):
-            return {"type": "function", "name": "compare_datasets"}
+            return "compare_datasets"
+
+        if any(token in text for token in (
+            "frequency", "spectrum", "spectral", "bandpass",
+            "filter recommendation", "recommend a filter", "recommend filter",
+        )):
+            return "inspect_frequency"
 
         if any(token in text for token in (
             "inspect", "dataset", "data set", "what do you see",
             "tell me what you see", "sampling", "trace count", "surange",
         )):
-            return {"type": "function", "name": "inspect_dataset"}
+            return "inspect_dataset"
 
-        return "auto"
+        return None
 
     @property
     def provider_info(self) -> dict[str, Any]:
         return self.provider.info()
 
-    def run_turn(
+    def _runtime_context(self, toolkit: AgentToolkit) -> str:
+        project_id = getattr(getattr(toolkit, "project", None), "project_id", "unknown")
+        current_dataset = str(getattr(toolkit, "current_path", "unknown"))
+        return (
+            "\n\nRuntime context supplied by the seismic application:\n"
+            f"- A seismic dataset IS currently loaded for project {project_id}.\n"
+            f"- Current dataset: {current_dataset}.\n"
+            "- Never ask the user to upload/load the dataset again when the application has provided evidence.\n"
+            "- Treat application-provided inspection results as authoritative observations for this turn.\n"
+            "- Do not claim that a processing operation was executed unless the application says it was executed."
+        )
+
+    def _run_openclaw_application_routed(
+        self,
+        user_text: str,
+        toolkit: AgentToolkit,
+        *,
+        max_tool_rounds: int,
+    ) -> dict[str, Any]:
+        """OpenClaw compatibility mode.
+
+        Read-only evidence gathering is routed deterministically by the seismic
+        application. OpenClaw then interprets the evidence. We still expose the
+        client-side tools with tool_choice=auto so capable OpenClaw backends may
+        make additional calls, but correctness no longer depends on a forced
+        client-tool call.
+        """
+        request_user = f"seismic-project-{getattr(toolkit.project, 'project_id', 'default')}"
+        runtime_context = self._runtime_context(toolkit)
+        tool_trace: list[dict[str, Any]] = []
+
+        routed_tool = self._route_read_tool(user_text)
+        evidence = None
+        if routed_tool is not None:
+            try:
+                result = toolkit.call(routed_tool, {})
+            except Exception as exc:
+                result = {"status": "error", "error": str(exc)}
+            tool_trace.append({
+                "tool": routed_tool,
+                "arguments": {},
+                "result": result,
+                "routed_by": "application",
+            })
+            evidence = {
+                "tool": routed_tool,
+                "result": result,
+            }
+
+        if evidence is None:
+            request_input = user_text
+        else:
+            request_input = (
+                f"User request:\n{user_text}\n\n"
+                "The seismic application already executed the appropriate read-only inspection tool. "
+                "Use the following structured evidence to answer the user. Do not say you lack access "
+                "to the dataset or tools.\n\n"
+                f"APPLICATION_EVIDENCE:\n{json.dumps(evidence, ensure_ascii=False, indent=2)}"
+            )
+
+        response = self.provider.create_response(
+            instructions=SYSTEM_PROMPT + runtime_context,
+            input=request_input,
+            tools=TOOL_SCHEMAS,
+            tool_choice="auto",
+            user=request_user,
+        )
+
+        rounds = 0
+        while rounds < max_tool_rounds:
+            calls = [
+                item for item in response.output
+                if getattr(item, "type", None) == "function_call"
+            ]
+            if not calls:
+                break
+
+            rounds += 1
+            outputs = []
+            for call in calls:
+                arguments = {}
+                try:
+                    arguments = json.loads(call.arguments or "{}")
+                    result = toolkit.call(call.name, arguments)
+                except Exception as exc:
+                    result = {"status": "error", "error": str(exc)}
+
+                tool_trace.append({
+                    "tool": call.name,
+                    "arguments": arguments,
+                    "result": result,
+                    "routed_by": "openclaw",
+                })
+                outputs.append({
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": json.dumps(result, ensure_ascii=False),
+                })
+
+            response = self.provider.create_response(
+                instructions=SYSTEM_PROMPT + runtime_context,
+                previous_response_id=response.id,
+                input=outputs,
+                tools=TOOL_SCHEMAS,
+                tool_choice="auto",
+                user=request_user,
+            )
+
+        if rounds >= max_tool_rounds and any(
+            getattr(item, "type", None) == "function_call" for item in response.output
+        ):
+            raise RuntimeError("Agent exceeded the maximum tool-call rounds.")
+
+        text = (response.output_text or "").strip()
+        if not text:
+            text = "The agent completed the turn but returned no final text."
+
+        return {
+            "text": text,
+            "pending_action": toolkit.pending_action,
+            "tool_trace": tool_trace,
+            "provider": self.provider.name,
+            "model": self.provider.model,
+            "provider_info": self.provider.info(),
+        }
+
+    def _run_native_function_calling(
         self,
         user_text: str,
         chat_history: list[dict[str, str]],
         toolkit: AgentToolkit,
         *,
-        max_tool_rounds: int = 8,
+        max_tool_rounds: int,
     ) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = []
         for message in chat_history[-20:]:
@@ -64,40 +183,13 @@ class SeismicAgent:
                 input_items.append({"role": role, "content": content})
         input_items.append({"role": "user", "content": user_text})
 
-        # OpenClaw's OpenResponses endpoint is stricter than OpenAI's SDK
-        # about array-item input schemas. For OpenClaw, send the current user
-        # turn as the documented string input and let the Gateway maintain
-        # per-project conversational state via the OpenResponses `user` key.
-        # OpenAI direct mode keeps the explicit message-history array.
-        request_user = None
-        if self.provider.name == "openclaw":
-            request_input = user_text
-            project_id = getattr(getattr(toolkit, "project", None), "project_id", "default")
-            request_user = f"seismic-project-{project_id}"
-        else:
-            request_input = input_items
-
-        project_id = getattr(getattr(toolkit, "project", None), "project_id", "unknown")
-        current_dataset = str(getattr(toolkit, "current_path", "unknown"))
-        runtime_context = (
-            "\n\nRuntime context supplied by the seismic application:\n"
-            f"- A seismic dataset IS currently loaded for project {project_id}.\n"
-            f"- Current dataset: {current_dataset}.\n"
-            "- The client-side function tools listed in this request ARE available to you.\n"
-            "- Do not ask the user to attach or load the dataset when an inspection tool can read it.\n"
-            "- For data-specific claims, call the appropriate inspection tool and ground the answer in its result."
+        runtime_context = self._runtime_context(toolkit)
+        response = self.provider.create_response(
+            instructions=SYSTEM_PROMPT + runtime_context,
+            input=input_items,
+            tools=TOOL_SCHEMAS,
+            tool_choice="auto",
         )
-
-        create_kwargs = {
-            "instructions": SYSTEM_PROMPT + runtime_context,
-            "input": request_input,
-            "tools": TOOL_SCHEMAS,
-            "tool_choice": self._initial_tool_choice(user_text),
-        }
-        if request_user is not None:
-            create_kwargs["user"] = request_user
-
-        response = self.provider.create_response(**create_kwargs)
 
         tool_trace: list[dict[str, Any]] = []
         rounds = 0
@@ -124,6 +216,7 @@ class SeismicAgent:
                     "tool": call.name,
                     "arguments": arguments,
                     "result": result,
+                    "routed_by": self.provider.name,
                 })
                 outputs.append({
                     "type": "function_call_output",
@@ -131,17 +224,13 @@ class SeismicAgent:
                     "output": json.dumps(result, ensure_ascii=False),
                 })
 
-            followup_kwargs = {
-                "instructions": SYSTEM_PROMPT + runtime_context,
-                "previous_response_id": response.id,
-                "input": outputs,
-                "tools": TOOL_SCHEMAS,
-                "tool_choice": "auto",
-            }
-            if request_user is not None:
-                followup_kwargs["user"] = request_user
-
-            response = self.provider.create_response(**followup_kwargs)
+            response = self.provider.create_response(
+                instructions=SYSTEM_PROMPT + runtime_context,
+                previous_response_id=response.id,
+                input=outputs,
+                tools=TOOL_SCHEMAS,
+                tool_choice="auto",
+            )
 
         if rounds >= max_tool_rounds and any(
             getattr(item, "type", None) == "function_call" for item in response.output
@@ -160,3 +249,27 @@ class SeismicAgent:
             "model": self.provider.model,
             "provider_info": self.provider.info(),
         }
+
+    def run_turn(
+        self,
+        user_text: str,
+        chat_history: list[dict[str, str]],
+        toolkit: AgentToolkit,
+        *,
+        max_tool_rounds: int = 8,
+    ) -> dict[str, Any]:
+        if self.provider.name == "openclaw" and getattr(
+            self.provider, "tool_strategy", "application_routed"
+        ) == "application_routed":
+            return self._run_openclaw_application_routed(
+                user_text,
+                toolkit,
+                max_tool_rounds=max_tool_rounds,
+            )
+
+        return self._run_native_function_calling(
+            user_text,
+            chat_history,
+            toolkit,
+            max_tool_rounds=max_tool_rounds,
+        )

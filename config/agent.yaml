@@ -9,6 +9,9 @@ openclaw:
   credential_env: OPENCLAW_GATEWAY_TOKEN
   # Optional explicit OpenClaw agent id. Leave null when model already routes it.
   agent_id: null
+  # application_routed avoids depending on the backend model to emit a forced client function call.
+  # Set to native only if your OpenClaw backend reliably supports client-side function calling.
+  tool_strategy: application_routed
 
 openai:
   model: gpt-5.6

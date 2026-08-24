@@ -15,6 +15,7 @@ class OpenClawProvider(AgentProvider):
         self.base_url = str(config.get("base_url") or "http://127.0.0.1:18789/v1").rstrip("/")
         self.model = str(config.get("model") or "openclaw/default")
         self.agent_id = config.get("agent_id")
+        self.tool_strategy = str(config.get("tool_strategy") or "application_routed")
         credential_env = str(config.get("credential_env") or "OPENCLAW_GATEWAY_TOKEN")
         credential = os.getenv(credential_env)
         if not credential:
@@ -47,5 +48,6 @@ class OpenClawProvider(AgentProvider):
             "model": self.model,
             "base_url": self.base_url,
             "agent_id": self.agent_id,
+            "tool_strategy": self.tool_strategy,
             "credential_env": self.credential_env,
         }

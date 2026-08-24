@@ -401,3 +401,35 @@ and that the supplied client-side tools are available.
 
 This avoids the failure mode where the model replies that it cannot access a
 dataset even though the application has already loaded one.
+
+## v0.3.4 OpenClaw compatibility change
+
+OpenClaw's `/v1/responses` endpoint enforces pinned/required client tool calls: if the selected backend agent does not emit a matching structured `function_call`, the Gateway returns HTTP 502. Some OpenClaw backend/model combinations may therefore fail even though the Gateway accepted the tool schema.
+
+V0.3.4 defaults OpenClaw to:
+
+```yaml
+openclaw:
+  tool_strategy: application_routed
+```
+
+In this mode, obvious read-only seismic intents are routed by the application:
+
+```text
+inspect dataset       -> inspect_dataset
+frequency / spectrum  -> inspect_frequency
+review filter result  -> compare_datasets
+```
+
+The application executes the read-only inspection tool first and sends its structured result to OpenClaw as authoritative application evidence. OpenClaw then performs interpretation/reasoning. Client-side tools remain available with `tool_choice=auto`, but correctness no longer depends on a forced OpenClaw function call.
+
+OpenAI direct mode continues to use native Responses API function calling.
+
+If a future OpenClaw backend reliably emits client-side function calls, you can test:
+
+```yaml
+openclaw:
+  tool_strategy: native
+```
+
+For production deployments, `application_routed` is the recommended default.

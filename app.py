@@ -18,7 +18,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.5.1'
+VERSION = '0.5.2'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -175,8 +175,15 @@ def run_agent_turn(prompt, project, state, history):
         st.session_state.pending_action = result['pending_action']
 
 
-# Initial state: keep the sidebar free for chat; open a dataset from the main area.
+# Initial state: show the full application shell immediately. The agent sidebar is
+# visible but chat remains disabled until a SEG-Y dataset has been loaded.
 if 'project_id' not in st.session_state:
+    render_sidebar(
+        provider_info=None,
+        agent_ready=False,
+        dataset_loaded=False,
+    )
+
     st.title(f'Seismic Agent V{VERSION}')
     st.caption('AI-native Seismic Unix workstation')
     st.subheader('Open Project')
@@ -187,7 +194,7 @@ if 'project_id' not in st.session_state:
     )
 
     if uploaded is None:
-        st.info('Upload a `.sgy` or `.segy` file to begin.')
+        st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
         st.stop()
 
     signature = f'{uploaded.name}:{uploaded.size}'
@@ -237,6 +244,7 @@ prompt, decision = render_sidebar(
     provider_info,
     agent_ready=agent_ready,
     agent_error=agent_error,
+    dataset_loaded=True,
 )
 
 # Handle sidebar decisions before rendering the main tabs so plots reflect the latest state.

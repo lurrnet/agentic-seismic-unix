@@ -1,0 +1,9 @@
+name: inspect_headers
+display_name: Inspect Headers
+description: Inspect selected SU trace-header keys without modifying data.
+category: inspection
+input_type: su
+output_type: json
+approval_level: auto
+parameters:
+  keys: {type: string, required: true}

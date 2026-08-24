@@ -38,6 +38,60 @@ class SeismicAgent:
 
         return None
 
+    @staticmethod
+    def _wants_bandpass_proposal(user_text: str) -> bool:
+        text = user_text.lower()
+        return any(token in text for token in (
+            "recommend a reasonable bandpass",
+            "recommend a bandpass",
+            "recommend bandpass",
+            "recommend a filter",
+            "recommend filter",
+            "filter recommendation",
+            "suggest a bandpass",
+            "suggest a filter",
+            "what filter",
+            "which filter",
+        ))
+
+    @staticmethod
+    def _extract_application_proposal(text: str) -> dict[str, Any] | None:
+        """Extract the application-routed proposal envelope from model text.
+
+        OpenClaw compatibility mode intentionally does not depend on native
+        client-side function calling. The model may therefore return one JSON
+        object wrapped between stable markers; the application parses and
+        validates it before creating a pending action.
+        """
+        start_marker = "<SEISMIC_PROPOSAL>"
+        end_marker = "</SEISMIC_PROPOSAL>"
+        start = text.find(start_marker)
+        if start < 0:
+            return None
+        end = text.find(end_marker, start + len(start_marker))
+        if end < 0:
+            return None
+        raw = text[start + len(start_marker):end].strip()
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(obj, dict):
+            return None
+        return obj
+
+    @staticmethod
+    def _strip_application_proposal(text: str) -> str:
+        start_marker = "<SEISMIC_PROPOSAL>"
+        end_marker = "</SEISMIC_PROPOSAL>"
+        start = text.find(start_marker)
+        if start < 0:
+            return text.strip()
+        end = text.find(end_marker, start + len(start_marker))
+        if end < 0:
+            return text.strip()
+        return (text[:start] + text[end + len(end_marker):]).strip()
+
     @property
     def provider_info(self) -> dict[str, Any]:
         return self.provider.info()
@@ -102,11 +156,29 @@ class SeismicAgent:
                 f"APPLICATION_EVIDENCE:\n{json.dumps(evidence, ensure_ascii=False, indent=2)}"
             )
 
+        wants_proposal = self._wants_bandpass_proposal(user_text)
+        routed_instructions = SYSTEM_PROMPT + runtime_context
+        if wants_proposal:
+            routed_instructions += (
+                "\n\nOpenClaw compatibility mode is active. Do NOT claim that the bandpass-action "
+                "tool is unavailable and do NOT depend on a native function call to create the proposal. "
+                "If the supplied frequency evidence supports a bandpass recommendation, include exactly one "
+                "machine-readable proposal envelope at the END of your answer using this exact format:\n"
+                "<SEISMIC_PROPOSAL>\n"
+                '{"action":"apply_bandpass_filter","f1":number,"f2":number,"f3":number,"f4":number,'
+                '"reason":"short evidence-based reason"}\n'
+                "</SEISMIC_PROPOSAL>\n"
+                "The frequencies are in Hz and must satisfy 0 <= f1 < f2 < f3 < f4 < Nyquist. "
+                "The application will validate the proposal and require human approval before execution. "
+                "If evidence is insufficient for a defensible filter, do not emit the proposal envelope."
+            )
+
+        # In application-routed mode the app owns evidence gathering and proposal
+        # creation. Passing no client tools avoids OpenClaw trying (and failing)
+        # to turn a valid recommendation into a native function call.
         response = self.provider.create_response(
-            instructions=SYSTEM_PROMPT + runtime_context,
+            instructions=routed_instructions,
             input=request_input,
-            tools=TOOL_SCHEMAS,
-            tool_choice="auto",
             user=request_user,
         )
 
@@ -158,6 +230,45 @@ class SeismicAgent:
         text = (response.output_text or "").strip()
         if not text:
             text = "The agent completed the turn but returned no final text."
+
+        # OpenClaw application-routed proposal bridge. Convert the model's
+        # structured recommendation into the SAME validator-backed pending
+        # action used by native function-calling providers.
+        proposal = self._extract_application_proposal(text) if wants_proposal else None
+        if proposal is not None:
+            try:
+                if proposal.get("action") != "apply_bandpass_filter":
+                    raise ValueError("Unsupported proposal action.")
+                result = toolkit.propose_bandpass({
+                    "f1": proposal.get("f1"),
+                    "f2": proposal.get("f2"),
+                    "f3": proposal.get("f3"),
+                    "f4": proposal.get("f4"),
+                    "reason": proposal.get("reason") or "OpenClaw recommended a bandpass from application evidence.",
+                })
+                tool_trace.append({
+                    "tool": "apply_bandpass_filter",
+                    "arguments": {k: proposal.get(k) for k in ("f1", "f2", "f3", "f4", "reason")},
+                    "result": result,
+                    "routed_by": "application_proposal_bridge",
+                })
+                clean_text = self._strip_application_proposal(text)
+                p = toolkit.pending_action["parameters"]
+                text = (clean_text +
+                        f"\n\nA validated pending filter proposal was created: "
+                        f"**{p['f1']:g} / {p['f2']:g} / {p['f3']:g} / {p['f4']:g} Hz**. "
+                        "It will not run until you approve it in the UI.").strip()
+            except Exception as exc:
+                clean_text = self._strip_application_proposal(text)
+                text = (clean_text +
+                        "\n\nThe model supplied a filter recommendation, but the application rejected it "
+                        f"during validation: `{exc}`. No pending processing action was created.").strip()
+                tool_trace.append({
+                    "tool": "apply_bandpass_filter",
+                    "arguments": proposal,
+                    "result": {"status": "validation_error", "error": str(exc)},
+                    "routed_by": "application_proposal_bridge",
+                })
 
         return {
             "text": text,

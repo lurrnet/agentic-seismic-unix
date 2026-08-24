@@ -460,3 +460,10 @@ Re-export `AgentConfigurationError` from `agent.seismic_agent` for compatibility
 ### QC metric correction in V0.4
 
 Before/after signal-retention and high-frequency-reduction ratios are now computed from **unnormalized** mean amplitude spectra. Plotting remains independently normalized for visual comparison. This prevents display normalization from distorting quantitative reflection metrics.
+
+
+## v0.4.1 OpenClaw proposal bridge fix
+
+In `openclaw.tool_strategy: application_routed` mode, read-only evidence and bandpass proposal creation are both application-routed. OpenClaw no longer needs to emit a native client function call for `apply_bandpass_filter`. When the user explicitly asks for a filter recommendation, the model returns a marked JSON proposal envelope; the application parses it, validates `f1 < f2 < f3 < f4 < Nyquist`, and creates the normal human-approval-gated pending action.
+
+If the proposed frequency values look geophysically unexpected, first check the displayed sample interval and Nyquist. All proposal frequencies are interpreted in Hz and are rejected automatically if they violate the dataset Nyquist limit.

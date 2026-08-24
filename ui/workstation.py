@@ -3,13 +3,15 @@ import streamlit as st
 
 WORKSTATION_CSS = r"""
 <style>
-/* V0.6.1: deterministic three-zone agent panel.
-   Only stable key-derived classes are used; no Streamlit data-testid selectors. */
+/* V0.6.2: sticky three-zone agent panel.
+   The whole left panel stays in the viewport while the right workspace scrolls. */
 .st-key-agent_panel {
-    position: relative;
+    position: sticky;
+    top: 1.25rem;
     height: calc(100vh - 2.5rem);
     min-height: 680px;
     overflow: hidden;
+    align-self: flex-start;
     border: 1px solid rgba(128, 128, 128, 0.22);
     border-radius: 0.75rem;
     padding: 0;
@@ -48,7 +50,7 @@ WORKSTATION_CSS = r"""
     padding: 0.55rem 0.2rem 0.8rem 0.2rem;
 }
 
-/* Composer is pinned to the bottom and never participates in chat scrolling. */
+/* Composer is pinned to the bottom of the sticky panel. */
 .st-key-agent_composer {
     position: absolute;
     left: 1rem;
@@ -71,6 +73,8 @@ WORKSTATION_CSS = r"""
 
 @media (max-width: 1000px) {
     .st-key-agent_panel {
+        position: relative;
+        top: auto;
         height: 70vh;
         min-height: 600px;
     }

@@ -1,5 +1,7 @@
 # Local files
 .local/
+.env
+data/
 
 # Seismic Unix tarball
 source/cwp_su_all_*.tgz
@@ -8,6 +10,9 @@ source/cwp_su_all_*.tgz
 __pycache__/
 *.py[codz]
 *$py.class
+
+# MacOS related files
+.DS_Store
 
 # C extensions
 *.so

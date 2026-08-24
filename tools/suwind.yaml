@@ -1,0 +1,19 @@
+name: suwind
+display_name: Select Traces
+description: Select a trace subset by one SU header key and numeric min/max bounds.
+category: selection
+input_type: su
+output_type: su
+approval_level: processing
+parameters:
+  key: {type: string, required: true}
+  min: {type: float, required: true}
+  max: {type: float, required: true}
+validation:
+  ordered_bounds: true
+execution:
+  executable: suwind
+  argument_template:
+    - "key={key}"
+    - "min={min}"
+    - "max={max}"

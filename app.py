@@ -19,13 +19,13 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.6.5'
+VERSION = '0.6.6'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
 
 st.set_page_config(
-    page_title=f'Seismic Agent V{VERSION}',
+    page_title=f'Agentic SeismicUnix V{VERSION}',
     page_icon='〰️',
     layout='wide',
     initial_sidebar_state='collapsed',
@@ -188,7 +188,7 @@ if 'project_id' not in st.session_state:
         )
 
     with workspace_col:
-        st.title(f'Seismic Agent V{VERSION}')
+        st.title(f'Agentic SeismicUnix V{VERSION}')
         st.caption('AI-native Seismic Unix workstation')
         st.subheader('Open Project')
         uploaded = st.file_uploader(

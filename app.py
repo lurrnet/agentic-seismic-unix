@@ -4,6 +4,7 @@ import streamlit as st
 from agent.seismic_agent import SeismicAgent, AgentConfigurationError
 from agent.provider_factory import load_agent_config
 from agent.toolkit import AgentToolkit
+from agent.proposal_fallback import parse_explicit_user_command
 from project.project import Project
 from workflow.history import HistoryStore
 from workflow.engine import WorkflowEngine
@@ -19,7 +20,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.7.1'
+VERSION = '0.7.2'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -89,13 +90,18 @@ def execute_pending_processing(project, state, history, engine, action):
     tool_name = action['tool']
     operation = action.get('operation', tool_name)
     out = project.next_output_path(operation)
+    authorization = action.get('authorization')
+    if authorization == 'explicit_user_command':
+        reason = f"Explicit user command: {action.get('reason', '')}"
+    else:
+        reason = f"Agent proposal approved by user: {action.get('reason', '')}"
     rec = engine.run_processing_step(
         state,
         tool_name,
         current,
         out,
         action['parameters'],
-        f"Agent proposal approved by user: {action.get('reason', '')}",
+        reason,
     )
     state.current_step = rec['step_id']
     state.current_dataset = str(out)
@@ -104,7 +110,7 @@ def execute_pending_processing(project, state, history, engine, action):
 
 
 def run_reflection_after_filter(project, history, registry, out):
-    reflection_message = f'Approved filter executed successfully as `{out.name}`.'
+    reflection_message = f'Filter executed successfully as `{out.name}`.'
     reflection_cfg = get_reflection_config()
     auto_reflect = bool(
         reflection_cfg.get('enabled', True)
@@ -176,6 +182,71 @@ def run_agent_turn(prompt, project, state, history):
     st.session_state.last_tool_trace = result['tool_trace']
     if result['pending_action'] is not None:
         st.session_state.pending_action = result['pending_action']
+
+
+def build_explicit_processing_action(command, project, state, history):
+    """Validate an explicit user command and convert it to the normal action shape."""
+    toolkit = AgentToolkit(project, state, history, registry, preview_traces=200)
+    action = command['action']
+    params = command['parameters']
+    reason = command.get('reason') or 'Explicit user command with complete parameters.'
+
+    if action == 'apply_bandpass_filter':
+        toolkit.propose_bandpass({**params, 'reason': reason})
+    elif action == 'apply_gain':
+        toolkit.propose_gain({**params, 'reason': reason})
+    elif action == 'apply_agc':
+        toolkit.propose_agc({**params, 'reason': reason})
+    elif action == 'select_traces':
+        toolkit.propose_trace_selection({**params, 'reason': reason})
+    else:
+        raise ValueError(f'Unsupported explicit processing action: {action}')
+
+    pending = toolkit.pending_action
+    if pending is None:
+        raise ValueError('Explicit command did not produce a processing action.')
+
+    spec = registry.get(pending['tool'])
+    if spec.get('approval_policy') != 'explicit_or_approval':
+        raise ValueError(
+            f"{pending.get('display_name', pending['tool'])} does not allow direct execution."
+        )
+
+    pending['authorization'] = 'explicit_user_command'
+    return pending
+
+
+def execute_explicit_user_command(prompt, command, project, state, history, engine):
+    """Execute a fully specified, explicitly authorized user command without a second approval."""
+    st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
+    action = build_explicit_processing_action(command, project, state, history)
+    st.session_state.pending_action = None
+    rec, out = execute_pending_processing(project, state, history, engine, action)
+
+    if action.get('tool') == 'sufilter':
+        completion_message = run_reflection_after_filter(project, history, registry, out)
+    else:
+        completion_message = (
+            f"Executed **{action.get('display_name', action.get('tool', 'processing'))}** "
+            f"from your explicit command with parameters `{action.get('parameters', {})}`. "
+            f"Output: `{out.name}`."
+        )
+        st.session_state.last_reflection = None
+
+    st.session_state.last_tool_trace = [{
+        'tool': action.get('action', action.get('tool')),
+        'arguments': action.get('parameters', {}),
+        'result': {
+            'status': 'success',
+            'step_id': rec.get('step_id'),
+            'output': str(out),
+        },
+        'routed_by': 'explicit_user_command',
+    }]
+    st.session_state.chat_messages.append({
+        'role': 'assistant',
+        'content': completion_message,
+    })
 
 
 if 'project_id' not in st.session_state:
@@ -286,7 +357,29 @@ if decision == 'approve':
         st.code(str(exc))
 
 if prompt:
-    if not agent_ready:
+    explicit_command = parse_explicit_user_command(prompt)
+    if explicit_command is not None:
+        try:
+            execute_explicit_user_command(
+                prompt,
+                explicit_command,
+                project,
+                state,
+                history,
+                engine,
+            )
+            st.rerun()
+        except Exception as exc:
+            st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
+            st.session_state.chat_messages.append({
+                'role': 'assistant',
+                'content': (
+                    'I recognized an explicit processing command, but the application rejected it '
+                    f'during validation: `{exc}`. No processing was run.'
+                ),
+            })
+            st.rerun()
+    elif not agent_ready:
         st.error(agent_error or 'Agent is not configured.')
     else:
         try:

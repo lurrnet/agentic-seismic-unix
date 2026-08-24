@@ -1,0 +1,14 @@
+name: suagc
+display_name: Apply AGC
+description: Apply automatic gain control with sugain agc=1 and a validated window length.
+category: amplitude
+input_type: su
+output_type: su
+approval_level: processing
+parameters:
+  wagc: {type: float, required: true, minimum: 0.01, maximum: 10.0}
+execution:
+  executable: sugain
+  argument_template:
+    - "agc=1"
+    - "wagc={wagc}"

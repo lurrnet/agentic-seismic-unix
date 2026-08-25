@@ -1,0 +1,14 @@
+name: suresamp
+display_name: Resample Dataset
+description: Resample SU traces to a validated sample interval using suresamp.
+category: sampling
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: explicit_or_approval
+parameters:
+  dt: {type: float, required: true, minimum: 0.0001, maximum: 0.1}
+execution:
+  executable: suresamp
+  argument_template:
+    - "dt={dt}"

@@ -15,6 +15,11 @@ class KnowledgeAugmentedProvider(AgentProvider):
         self.name = provider.name
         self.model = provider.model
 
+    def __getattr__(self, name: str):
+        # Preserve provider-specific behavior such as OpenClaw tool_strategy,
+        # agent_id, base_url, and future provider attributes.
+        return getattr(self.provider, name)
+
     @staticmethod
     def _query_text(value: Any) -> str:
         if isinstance(value, str):

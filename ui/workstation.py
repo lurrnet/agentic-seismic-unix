@@ -3,26 +3,30 @@ import streamlit as st
 
 WORKSTATION_CSS = r"""
 <style>
-/* Keep the workstation compact without clipping top titles. */
+/* Base page spacing. */
 div[data-testid="stMainBlockContainer"],
 .block-container {
     padding-top: 0.9rem !important;
 }
 
-/* Give only the pre-load main panel extra clearance from the Streamlit toolbar. */
-.st-key-initial_load_panel {
-    padding-top: 1.35rem !important;
-}
-
-/* Sticky dual-panel workstation. */
+/*
+Give the entire two-column workstation one shared toolbar clearance.
+This keeps the left panel border and right-column content on the same top line.
+*/
 div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
     align-items: flex-start !important;
     overflow: visible !important;
+    padding-top: 1.35rem !important;
+}
+
+/* Do not add a second, right-only offset on the initial load screen. */
+.st-key-initial_load_panel {
+    padding-top: 0 !important;
 }
 
 div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     position: sticky !important;
-    top: 0.9rem !important;
+    top: 2.25rem !important;
     align-self: flex-start !important;
     overflow: visible !important;
     z-index: 20;
@@ -39,7 +43,7 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 
 .st-key-agent_panel {
     position: relative;
-    height: calc(100vh - 1.8rem);
+    height: calc(100vh - 3.15rem);
     min-height: 680px;
     width: 100%;
     max-width: 100%;
@@ -166,6 +170,10 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 }
 
 @media (max-width: 1000px) {
+    div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
+        padding-top: 1rem !important;
+    }
+
     div[data-testid="stColumn"]:has(.st-key-agent_panel) {
         position: relative !important;
         top: auto !important;

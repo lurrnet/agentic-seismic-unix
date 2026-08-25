@@ -23,7 +23,7 @@ from ui.agent_details_page import render_agent_details
 from ui.readme_page import render_readme
 
 
-VERSION = '0.7.4'
+VERSION = '0.8.0'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -71,8 +71,8 @@ def reset_chat_for_project():
     st.session_state.chat_messages = [{
         'role': 'assistant',
         'content': (
-            'Dataset loaded. Ask me to inspect the data, inspect its frequency content, '
-            'recommend a bandpass filter, apply gain or AGC, select traces, or review the latest filter QC.'
+            'Dataset loaded. I can inspect data, frequency, amplitude and geometry; apply filters, '
+            'gain or AGC; select or sort traces; resample data; and propose restricted header edits.'
         ),
     }]
     st.session_state.pending_action = None
@@ -100,6 +100,7 @@ def execute_pending_processing(project, state, history, engine, action):
         reason = f"Explicit follow-up confirmation: {action.get('reason', '')}"
     else:
         reason = f"Agent proposal approved by user: {action.get('reason', '')}"
+
     rec = engine.run_processing_step(
         state,
         tool_name,
@@ -108,8 +109,10 @@ def execute_pending_processing(project, state, history, engine, action):
         action['parameters'],
         reason,
     )
+    refreshed = read_su_metadata(out)
     state.current_step = rec['step_id']
     state.current_dataset = str(out)
+    state.metadata = refreshed.to_dict()
     project.save_state(state)
     return rec, out
 
@@ -121,7 +124,6 @@ def run_reflection_after_filter(project, history, registry, out):
         reflection_cfg.get('enabled', True)
         and reflection_cfg.get('auto_after_agent_filter', True)
     )
-
     if not auto_reflect:
         st.session_state.last_reflection = None
         return reflection_message + '\n\nAutomatic QC reflection is disabled in `config/agent.yaml`.'
@@ -129,19 +131,12 @@ def run_reflection_after_filter(project, history, registry, out):
     try:
         refreshed_state = project.load_state()
         max_traces = int(reflection_cfg.get('max_preview_traces', 200))
-        toolkit = AgentToolkit(
-            project,
-            refreshed_state,
-            history,
-            registry,
-            preview_traces=max_traces,
-        )
+        toolkit = AgentToolkit(project, refreshed_state, history, registry, preview_traces=max_traces)
         agent = SeismicAgent()
         reflection = agent.review_latest_filter(toolkit, max_traces=max_traces)
         st.session_state.last_reflection = reflection
         if reflection.get('pending_action') is not None:
             st.session_state.pending_action = reflection['pending_action']
-
         history.append({
             'step_id': refreshed_state.current_step,
             'parent_step': refreshed_state.current_step,
@@ -158,13 +153,9 @@ def run_reflection_after_filter(project, history, registry, out):
             'model': reflection.get('model'),
         })
         return reflection_message + '\n\n' + reflection['text']
-
     except Exception as exc:
         st.session_state.last_reflection = {
-            'status': 'error',
-            'decision': 'review_only',
-            'error': str(exc),
-        }
+            'status': 'error', 'decision': 'review_only', 'error': str(exc)}
         return (
             reflection_message
             + '\n\nThe filter completed, but automatic QC reflection failed: '
@@ -175,15 +166,10 @@ def run_reflection_after_filter(project, history, registry, out):
 def run_agent_turn(prompt, project, state, history):
     prior_history = list(st.session_state.chat_messages)
     st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
-
     toolkit = AgentToolkit(project, state, history, registry, preview_traces=200)
     agent = SeismicAgent()
     result = agent.run_turn(prompt, prior_history, toolkit)
-
-    st.session_state.chat_messages.append({
-        'role': 'assistant',
-        'content': result['text'],
-    })
+    st.session_state.chat_messages.append({'role': 'assistant', 'content': result['text']})
     st.session_state.last_tool_trace = result['tool_trace']
     if result['pending_action'] is not None:
         st.session_state.pending_action = result['pending_action']
@@ -203,19 +189,21 @@ def build_explicit_processing_action(command, project, state, history):
         toolkit.propose_agc({**params, 'reason': reason})
     elif action == 'select_traces':
         toolkit.propose_trace_selection({**params, 'reason': reason})
+    elif action == 'sort_dataset':
+        toolkit.propose_sort({**params, 'reason': reason})
+    elif action == 'resample_dataset':
+        toolkit.propose_resample({**params, 'reason': reason})
     else:
         raise ValueError(f'Unsupported explicit processing action: {action}')
 
     pending = toolkit.pending_action
     if pending is None:
         raise ValueError('Explicit command did not produce a processing action.')
-
     spec = registry.get(pending['tool'])
     if spec.get('approval_policy') != 'explicit_or_approval':
         raise ValueError(
             f"{pending.get('display_name', pending['tool'])} does not allow direct execution."
         )
-
     pending['authorization'] = 'explicit_user_command'
     return pending
 
@@ -224,7 +212,6 @@ def execute_authorized_action(prompt, action, project, state, history, engine, r
     st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
     st.session_state.pending_action = None
     rec, out = execute_pending_processing(project, state, history, engine, action)
-
     if action.get('tool') == 'sufilter':
         completion_message = run_reflection_after_filter(project, history, registry, out)
     else:
@@ -233,21 +220,13 @@ def execute_authorized_action(prompt, action, project, state, history, engine, r
             f"with parameters `{action.get('parameters', {})}`. Output: `{out.name}`."
         )
         st.session_state.last_reflection = None
-
     st.session_state.last_tool_trace = [{
         'tool': action.get('action', action.get('tool')),
         'arguments': action.get('parameters', {}),
-        'result': {
-            'status': 'success',
-            'step_id': rec.get('step_id'),
-            'output': str(out),
-        },
+        'result': {'status': 'success', 'step_id': rec.get('step_id'), 'output': str(out)},
         'routed_by': routed_by,
     }]
-    st.session_state.chat_messages.append({
-        'role': 'assistant',
-        'content': completion_message,
-    })
+    st.session_state.chat_messages.append({'role': 'assistant', 'content': completion_message})
 
 
 def is_explicit_followup_confirmation(prompt, action):
@@ -256,40 +235,29 @@ def is_explicit_followup_confirmation(prompt, action):
     spec = registry.get(action['tool'])
     if spec.get('approval_policy') != 'explicit_or_approval':
         return False
-
     text = prompt.strip().lower()
     patterns = (
         r'^(?:yes[, ]*)?(?:go ahead|proceed|do it|run it|execute it|apply it)[.! ]*$',
-        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:that|this|such)(?:\s+(?:agc|gain|filter|bandpass|selection))?[.! ]*$',
-        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:the\s+)?(?:recommended|proposed)\s+(?:agc|gain|filter|bandpass|selection)[.! ]*$',
+        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:that|this|such)(?:\s+(?:agc|gain|filter|bandpass|selection|sort|resample))?[.! ]*$',
+        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:the\s+)?(?:recommended|proposed)\s+(?:agc|gain|filter|bandpass|selection|sort|resample)[.! ]*$',
     )
     return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 
 
 if 'project_id' not in st.session_state:
     agent_col, workspace_col = workstation_columns()
-
     with agent_col:
-        render_agent_panel(
-            provider_info=None,
-            agent_ready=False,
-            dataset_loaded=False,
-        )
-
+        render_agent_panel(provider_info=None, agent_ready=False, dataset_loaded=False)
     with workspace_col:
         st.title(f'Agentic SeismicUnix V{VERSION}')
         st.caption('AI-native Seismic Unix workstation')
         st.subheader('Open Project')
         uploaded = st.file_uploader(
-            'Upload a SEG-Y file',
-            type=['sgy', 'segy'],
-            help='SEG-Y is converted to SU inside the project workspace.',
-        )
-
+            'Upload a SEG-Y file', type=['sgy', 'segy'],
+            help='SEG-Y is converted to SU inside the project workspace.')
         if uploaded is None:
             st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
             st.stop()
-
         signature = f'{uploaded.name}:{uploaded.size}'
         try:
             with st.spinner('Creating project and converting SEG-Y to SU...'):
@@ -312,10 +280,8 @@ current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
 
 for key, default in [
-    ('chat_messages', []),
-    ('pending_action', None),
-    ('last_tool_trace', []),
-    ('last_reflection', None),
+    ('chat_messages', []), ('pending_action', None),
+    ('last_tool_trace', []), ('last_reflection', None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -333,14 +299,10 @@ except Exception as exc:
     agent_error = str(exc)
 
 agent_col, workspace_col = workstation_columns()
-
 with agent_col:
     prompt, decision = render_agent_panel(
-        provider_info,
-        agent_ready=agent_ready,
-        agent_error=agent_error,
-        dataset_loaded=True,
-    )
+        provider_info, agent_ready=agent_ready,
+        agent_error=agent_error, dataset_loaded=True)
 
 if decision == 'reject':
     action = st.session_state.pending_action or {}
@@ -364,10 +326,7 @@ if decision == 'approve':
                 f"executed successfully as `{out.name}`."
             )
             st.session_state.last_reflection = None
-        st.session_state.chat_messages.append({
-            'role': 'assistant',
-            'content': completion_message,
-        })
+        st.session_state.chat_messages.append({'role': 'assistant', 'content': completion_message})
         st.rerun()
     except Exception as exc:
         st.error('Approved processing failed.')
@@ -380,14 +339,8 @@ if prompt:
             action = dict(pending)
             action['authorization'] = 'explicit_followup_confirmation'
             execute_authorized_action(
-                prompt,
-                action,
-                project,
-                state,
-                history,
-                engine,
-                routed_by='explicit_followup_confirmation',
-            )
+                prompt, action, project, state, history, engine,
+                routed_by='explicit_followup_confirmation')
             st.rerun()
         except Exception as exc:
             st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
@@ -395,8 +348,7 @@ if prompt:
                 'role': 'assistant',
                 'content': (
                     'I recognized your follow-up as authorization for the pending proposal, '
-                    f'but execution failed validation: `{exc}`. No processing was run.'
-                ),
+                    f'but execution failed validation: `{exc}`. No processing was run.'),
             })
             st.rerun()
 
@@ -404,28 +356,17 @@ if prompt:
     if explicit_command is not None:
         try:
             action = build_explicit_processing_action(
-                explicit_command,
-                project,
-                state,
-                history,
-            )
+                explicit_command, project, state, history)
             execute_authorized_action(
-                prompt,
-                action,
-                project,
-                state,
-                history,
-                engine,
-                routed_by='explicit_user_command',
-            )
+                prompt, action, project, state, history, engine,
+                routed_by='explicit_user_command')
             st.rerun()
         except Exception as exc:
             st.session_state.chat_messages.append({
                 'role': 'assistant',
                 'content': (
                     'I recognized an explicit processing command, but the application rejected it '
-                    f'during validation: `{exc}`. No processing was run.'
-                ),
+                    f'during validation: `{exc}`. No processing was run.'),
             })
             st.rerun()
     elif not agent_ready:
@@ -446,42 +387,30 @@ metadata = read_su_metadata(current)
 
 with workspace_col:
     workspace_tab, processing_tab, qc_tab, history_tab, agent_details_tab, readme_tab = st.tabs(
-        ['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme']
-    )
-
+        ['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme'])
     new_project_requested = False
     with workspace_tab:
         new_project_requested = render_workspace(
-            project, state, metadata, history, current, PREVIEW_TRACES
-        )
-
+            project, state, metadata, history, current, PREVIEW_TRACES)
     with processing_tab:
         render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
-
     with qc_tab:
         try:
             render_qc(state, history, current, metadata, PREVIEW_TRACES)
         except Exception as exc:
             st.warning('QC page could not be rendered for the current dataset.')
             st.code(str(exc))
-
     with history_tab:
         render_history(state, history, registry)
-
     with agent_details_tab:
         render_agent_details(
-            provider_info=provider_info,
-            agent_ready=agent_ready,
-            agent_error=agent_error,
-        )
-
+            provider_info=provider_info, agent_ready=agent_ready, agent_error=agent_error)
     with readme_tab:
         render_readme()
 
 if new_project_requested:
     for key in [
         'project_id', 'upload_signature', 'chat_messages', 'pending_action',
-        'last_tool_trace', 'last_reflection', 'workspace_page'
-    ]:
+        'last_tool_trace', 'last_reflection', 'workspace_page']:
         st.session_state.pop(key, None)
     st.rerun()

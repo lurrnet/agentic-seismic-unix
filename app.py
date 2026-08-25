@@ -21,9 +21,10 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 from ui.agent_details_page import render_agent_details
 from ui.readme_page import render_readme
+from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.8.1'
+VERSION = '0.8.2'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -72,6 +73,7 @@ def reset_chat_for_project():
         ),
     }]
     st.session_state.pending_action = None
+    st.session_state.pending_user_prompt = None
     st.session_state.last_tool_trace = []
     st.session_state.last_reflection = None
 
@@ -139,7 +141,8 @@ def run_reflection_after_filter(project, history, registry, out):
 
 def run_agent_turn(prompt, project, state, history):
     prior_history = list(st.session_state.chat_messages)
-    st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
+    if prior_history and prior_history[-1].get('role') == 'user' and prior_history[-1].get('content') == prompt:
+        prior_history = prior_history[:-1]
     toolkit = AgentToolkit(project, state, history, registry, preview_traces=200)
     agent = SeismicAgent()
     result = agent.run_turn(prompt, prior_history, toolkit)
@@ -174,7 +177,6 @@ def build_explicit_processing_action(command, project, state, history):
 
 
 def execute_authorized_action(prompt, action, project, state, history, engine, routed_by):
-    st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
     st.session_state.pending_action = None
     rec, out = execute_pending_processing(project, state, history, engine, action)
     if action.get('tool') == 'sufilter':
@@ -237,7 +239,10 @@ history = HistoryStore(project.history_dir / 'workflow.json')
 engine = WorkflowEngine(executor, history)
 current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
-for key, default in [('chat_messages', []), ('pending_action', None), ('last_tool_trace', []), ('last_reflection', None)]:
+for key, default in [
+    ('chat_messages', []), ('pending_action', None), ('pending_user_prompt', None),
+    ('last_tool_trace', []), ('last_reflection', None),
+]:
     if key not in st.session_state: st.session_state[key] = default
 
 agent_ready = True
@@ -252,6 +257,11 @@ except Exception as exc:
 agent_col, workspace_col = workstation_columns()
 with agent_col:
     prompt, decision = render_agent_panel(provider_info, agent_ready=agent_ready, agent_error=agent_error, dataset_loaded=True)
+
+if prompt:
+    st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
+    st.session_state.pending_user_prompt = prompt
+    st.rerun()
 
 if decision == 'reject':
     action = st.session_state.pending_action or {}
@@ -274,41 +284,62 @@ if decision == 'approve':
         st.error('Approved processing failed.')
         st.code(str(exc))
 
-if prompt:
-    pending = st.session_state.get('pending_action')
-    if is_explicit_followup_confirmation(prompt, pending):
-        try:
-            action = dict(pending); action['authorization'] = 'explicit_followup_confirmation'
-            execute_authorized_action(prompt, action, project, state, history, engine, routed_by='explicit_followup_confirmation')
+queued_prompt = st.session_state.pop('pending_user_prompt', None)
+if queued_prompt:
+    with st.spinner('Agent is working...'):
+        pending = st.session_state.get('pending_action')
+        if is_explicit_followup_confirmation(queued_prompt, pending):
+            try:
+                action = dict(pending)
+                action['authorization'] = 'explicit_followup_confirmation'
+                execute_authorized_action(
+                    queued_prompt, action, project, state, history, engine,
+                    routed_by='explicit_followup_confirmation')
+                st.rerun()
+            except Exception as exc:
+                st.session_state.chat_messages.append({
+                    'role': 'assistant',
+                    'content': f'I recognized your follow-up as authorization for the pending proposal, but execution failed validation: `{exc}`. No processing was run.'})
+                st.rerun()
+
+        explicit_command = parse_explicit_user_command(queued_prompt)
+        if explicit_command is not None:
+            try:
+                action = build_explicit_processing_action(explicit_command, project, state, history)
+                execute_authorized_action(
+                    queued_prompt, action, project, state, history, engine,
+                    routed_by='explicit_user_command')
+                st.rerun()
+            except Exception as exc:
+                st.session_state.chat_messages.append({
+                    'role': 'assistant',
+                    'content': f'I recognized an explicit processing command, but the application rejected it during validation: `{exc}`. No processing was run.'})
+                st.rerun()
+        elif not agent_ready:
+            st.session_state.chat_messages.append({
+                'role': 'assistant',
+                'content': agent_error or 'Agent is not configured.',
+            })
             st.rerun()
-        except Exception as exc:
-            st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
-            st.session_state.chat_messages.append({'role': 'assistant', 'content': f'I recognized your follow-up as authorization for the pending proposal, but execution failed validation: `{exc}`. No processing was run.'})
-            st.rerun()
-    explicit_command = parse_explicit_user_command(prompt)
-    if explicit_command is not None:
-        try:
-            action = build_explicit_processing_action(explicit_command, project, state, history)
-            execute_authorized_action(prompt, action, project, state, history, engine, routed_by='explicit_user_command')
-            st.rerun()
-        except Exception as exc:
-            st.session_state.chat_messages.append({'role': 'assistant', 'content': f'I recognized an explicit processing command, but the application rejected it during validation: `{exc}`. No processing was run.'})
-            st.rerun()
-    elif not agent_ready:
-        st.error(agent_error or 'Agent is not configured.')
-    else:
-        try:
-            run_agent_turn(prompt, project, state, history)
-            st.rerun()
-        except AgentConfigurationError as exc: st.error(str(exc))
-        except Exception as exc:
-            st.error('Agent request failed.')
-            st.code(str(exc))
+        else:
+            try:
+                run_agent_turn(queued_prompt, project, state, history)
+                st.rerun()
+            except AgentConfigurationError as exc:
+                st.session_state.chat_messages.append({'role': 'assistant', 'content': str(exc)})
+                st.rerun()
+            except Exception as exc:
+                st.session_state.chat_messages.append({
+                    'role': 'assistant',
+                    'content': f'Agent request failed: `{exc}`',
+                })
+                st.rerun()
 
 state = project.load_state()
 current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
 with workspace_col:
+    render_dataset_lineage(state, history)
     workspace_tab, processing_tab, qc_tab, history_tab, agent_details_tab, readme_tab = st.tabs(['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme'])
     new_project_requested = False
     with workspace_tab: new_project_requested = render_workspace(project, state, metadata, history, current, PREVIEW_TRACES)
@@ -323,6 +354,10 @@ with workspace_col:
     with readme_tab: render_readme()
 
 if new_project_requested:
-    for key in ['project_id', 'upload_signature', 'chat_messages', 'pending_action', 'last_tool_trace', 'last_reflection', 'workspace_page']:
+    for key in [
+        'project_id', 'upload_signature', 'chat_messages', 'pending_action',
+        'pending_user_prompt', 'last_tool_trace', 'last_reflection', 'workspace_page',
+        'dataset_lineage_pills',
+    ]:
         st.session_state.pop(key, None)
     st.rerun()

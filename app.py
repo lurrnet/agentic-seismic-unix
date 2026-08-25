@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import streamlit as st
 
 from agent.seismic_agent import SeismicAgent, AgentConfigurationError
@@ -20,7 +21,7 @@ from ui.qc_page import render_qc
 from ui.history_page import render_history
 
 
-VERSION = '0.7.2'
+VERSION = '0.7.3'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -93,6 +94,8 @@ def execute_pending_processing(project, state, history, engine, action):
     authorization = action.get('authorization')
     if authorization == 'explicit_user_command':
         reason = f"Explicit user command: {action.get('reason', '')}"
+    elif authorization == 'explicit_followup_confirmation':
+        reason = f"Explicit follow-up confirmation: {action.get('reason', '')}"
     else:
         reason = f"Agent proposal approved by user: {action.get('reason', '')}"
     rec = engine.run_processing_step(
@@ -185,7 +188,6 @@ def run_agent_turn(prompt, project, state, history):
 
 
 def build_explicit_processing_action(command, project, state, history):
-    """Validate an explicit user command and convert it to the normal action shape."""
     toolkit = AgentToolkit(project, state, history, registry, preview_traces=200)
     action = command['action']
     params = command['parameters']
@@ -216,10 +218,8 @@ def build_explicit_processing_action(command, project, state, history):
     return pending
 
 
-def execute_explicit_user_command(prompt, command, project, state, history, engine):
-    """Execute a fully specified, explicitly authorized user command without a second approval."""
+def execute_authorized_action(prompt, action, project, state, history, engine, routed_by):
     st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
-    action = build_explicit_processing_action(command, project, state, history)
     st.session_state.pending_action = None
     rec, out = execute_pending_processing(project, state, history, engine, action)
 
@@ -228,8 +228,7 @@ def execute_explicit_user_command(prompt, command, project, state, history, engi
     else:
         completion_message = (
             f"Executed **{action.get('display_name', action.get('tool', 'processing'))}** "
-            f"from your explicit command with parameters `{action.get('parameters', {})}`. "
-            f"Output: `{out.name}`."
+            f"with parameters `{action.get('parameters', {})}`. Output: `{out.name}`."
         )
         st.session_state.last_reflection = None
 
@@ -241,12 +240,28 @@ def execute_explicit_user_command(prompt, command, project, state, history, engi
             'step_id': rec.get('step_id'),
             'output': str(out),
         },
-        'routed_by': 'explicit_user_command',
+        'routed_by': routed_by,
     }]
     st.session_state.chat_messages.append({
         'role': 'assistant',
         'content': completion_message,
     })
+
+
+def is_explicit_followup_confirmation(prompt, action):
+    if not action or action.get('status') != 'pending_approval':
+        return False
+    spec = registry.get(action['tool'])
+    if spec.get('approval_policy') != 'explicit_or_approval':
+        return False
+
+    text = prompt.strip().lower()
+    patterns = (
+        r'^(?:yes[, ]*)?(?:go ahead|proceed|do it|run it|execute it|apply it)[.! ]*$',
+        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:that|this|such)(?:\s+(?:agc|gain|filter|bandpass|selection))?[.! ]*$',
+        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:the\s+)?(?:recommended|proposed)\s+(?:agc|gain|filter|bandpass|selection)[.! ]*$',
+    )
+    return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 
 
 if 'project_id' not in st.session_state:
@@ -357,16 +372,49 @@ if decision == 'approve':
         st.code(str(exc))
 
 if prompt:
-    explicit_command = parse_explicit_user_command(prompt)
-    if explicit_command is not None:
+    pending = st.session_state.get('pending_action')
+    if is_explicit_followup_confirmation(prompt, pending):
         try:
-            execute_explicit_user_command(
+            action = dict(pending)
+            action['authorization'] = 'explicit_followup_confirmation'
+            execute_authorized_action(
                 prompt,
-                explicit_command,
+                action,
                 project,
                 state,
                 history,
                 engine,
+                routed_by='explicit_followup_confirmation',
+            )
+            st.rerun()
+        except Exception as exc:
+            st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
+            st.session_state.chat_messages.append({
+                'role': 'assistant',
+                'content': (
+                    'I recognized your follow-up as authorization for the pending proposal, '
+                    f'but execution failed validation: `{exc}`. No processing was run.'
+                ),
+            })
+            st.rerun()
+
+    explicit_command = parse_explicit_user_command(prompt)
+    if explicit_command is not None:
+        try:
+            action = build_explicit_processing_action(
+                explicit_command,
+                project,
+                state,
+                history,
+            )
+            execute_authorized_action(
+                prompt,
+                action,
+                project,
+                state,
+                history,
+                engine,
+                routed_by='explicit_user_command',
             )
             st.rerun()
         except Exception as exc:

@@ -24,7 +24,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.8.6'
+VERSION = '0.8.7'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -381,6 +381,7 @@ with workspace_col:
             provider_info=provider_info,
             agent_ready=agent_ready,
             agent_error=agent_error,
+            history=history,
         )
     with readme_tab:
         render_readme()
@@ -389,7 +390,7 @@ if new_project_requested:
     for key in [
         'project_id', 'upload_signature', 'chat_messages', 'pending_action',
         'pending_user_prompt', 'last_tool_trace', 'last_reflection', 'workspace_page',
-        'dataset_lineage_pills',
+        'dataset_lineage_pills', 'dataset_lineage_active_step',
     ]:
         st.session_state.pop(key, None)
     st.rerun()

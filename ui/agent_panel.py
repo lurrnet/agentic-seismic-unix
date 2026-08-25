@@ -8,12 +8,16 @@ def render_agent_panel(
     agent_ready=True,
     agent_error=None,
     dataset_loaded=True,
+    version=None,
 ):
-    """Render the first-class Agent panel used by the V0.6 workstation."""
+    """Render the first-class Agent panel used by the workstation."""
     with st.container(key='agent_panel', border=False):
         with st.container(key='agent_panel_stack', border=False):
             with st.container(key='agent_header', border=False):
-                st.markdown('### Agentic SeismicUnix')
+                title = 'Agentic SeismicUnix'
+                if version:
+                    title += f' · v{version}'
+                st.markdown(f'### {title}')
                 if not dataset_loaded:
                     st.caption('Waiting for dataset')
                 elif agent_ready:

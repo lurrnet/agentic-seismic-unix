@@ -22,6 +22,12 @@ def _format_parameters(action):
             f"**Trace selection:** `{params['key']} = "
             f"{params['min']:g} .. {params['max']:g}`"
         )
+    if tool == 'sushw_constant':
+        return f"**Header edit:** `{params['key']} = {params['value']}` for all traces"
+    if tool == 'susort':
+        return f"**Sort:** by `{params['key']}`"
+    if tool == 'suresamp':
+        return f"**Resample:** `dt={params['dt']:g} s`"
 
     if not params:
         return None

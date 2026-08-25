@@ -79,6 +79,9 @@ def render_dataset_lineage(state, history):
                 st.session_state[pill_key] = current_label
         st.session_state[active_key] = current_step
 
+    if pill_key not in st.session_state and current_label is not None:
+        st.session_state[pill_key] = current_label
+
     with st.container(key='dataset_lineage', border=False):
         label_col, pills_col = st.columns([1, 5], gap='small', vertical_alignment='center')
         with label_col:
@@ -87,7 +90,6 @@ def render_dataset_lineage(state, history):
             selected = st.pills(
                 'Dataset lineage',
                 labels,
-                default=current_label,
                 selection_mode='single',
                 label_visibility='collapsed',
                 key=pill_key,

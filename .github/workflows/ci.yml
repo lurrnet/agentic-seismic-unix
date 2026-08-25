@@ -28,7 +28,9 @@ jobs:
           pip install -r requirements.txt pytest
 
       - name: Compile Python sources
-        run: python -m compileall agent knowledge project security seismic su ui workflow
+        run: |
+          python -m py_compile app.py
+          python -m compileall agent knowledge project security seismic su ui workflow scripts tests
 
       - name: Run unit tests
         run: pytest -q

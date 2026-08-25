@@ -1,5 +1,15 @@
 import streamlit as st
 
+from security.policy import get_security_limits
+
+
+def _human_bytes(value):
+    value = float(value)
+    for unit in ('B', 'KiB', 'MiB', 'GiB', 'TiB'):
+        if value < 1024 or unit == 'TiB':
+            return f'{value:.0f} {unit}' if unit == 'B' else f'{value:.1f} {unit}'
+        value /= 1024
+
 
 def render_agent_details(
     provider_info=None,
@@ -14,8 +24,24 @@ def render_agent_details(
         label = 'OpenClaw' if provider.get('provider') == 'openclaw' else 'OpenAI'
         st.markdown(f"**Provider:** {label}")
         st.markdown(f"**Model:** `{provider.get('model', 'unknown model')}`")
+        if provider.get('provider') == 'openclaw':
+            st.markdown(f"**Pinned Agent:** `{provider.get('agent_id') or 'not set'}`")
+            st.markdown(f"**Tool Strategy:** `{provider.get('tool_strategy', 'unknown')}`")
     else:
         st.warning(agent_error or 'Agent is not configured.')
+
+    st.subheader('Security Policy')
+    limits = get_security_limits()
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric('Max Upload', _human_bytes(limits['max_upload_bytes']))
+        st.metric('Max Processing Steps', limits['max_processing_steps'])
+    with c2:
+        st.metric('Max Project Storage', _human_bytes(limits['max_project_bytes']))
+        st.metric('SU Timeout', f"{limits['su_timeout_seconds']} s")
+    st.caption(
+        'SU execution is single-job, shell-free, timeout-bounded, and validated through the application registry.'
+    )
 
     trace = st.session_state.get('last_tool_trace') or []
     reflection = st.session_state.get('last_reflection')

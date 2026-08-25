@@ -3,10 +3,10 @@ import streamlit as st
 
 WORKSTATION_CSS = r"""
 <style>
-/* Reduce Streamlit's default page-top whitespace for the workstation. */
+/* Keep the workstation compact without clipping top titles. */
 div[data-testid="stMainBlockContainer"],
 .block-container {
-    padding-top: 0.45rem !important;
+    padding-top: 0.9rem !important;
 }
 
 /* Sticky dual-panel workstation. */
@@ -17,7 +17,7 @@ div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
 
 div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     position: sticky !important;
-    top: 0.45rem !important;
+    top: 0.9rem !important;
     align-self: flex-start !important;
     overflow: visible !important;
     z-index: 20;
@@ -34,7 +34,7 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 
 .st-key-agent_panel {
     position: relative;
-    height: calc(100vh - 0.9rem);
+    height: calc(100vh - 1.8rem);
     min-height: 680px;
     width: 100%;
     max-width: 100%;
@@ -54,19 +54,28 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 
 .st-key-agent_header {
     position: absolute;
-    top: 0.8rem;
+    top: 0.55rem;
     left: 1rem;
     right: 1rem;
-    height: 7.5rem;
+    height: 5.7rem;
     min-width: 0;
     max-width: calc(100% - 2rem);
     overflow: visible;
     z-index: 3;
 }
 
+.st-key-agent_header h3 {
+    margin-bottom: 0.15rem !important;
+}
+
+.st-key-agent_header [data-testid="stCaptionContainer"] {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
 .st-key-agent_history {
     position: absolute;
-    top: 8.7rem;
+    top: 6.55rem;
     left: 1rem;
     right: 1rem;
     bottom: 13.2rem;
@@ -78,7 +87,7 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     overscroll-behavior: contain;
     border-top: 1px solid rgba(128, 128, 128, 0.16);
     border-bottom: 1px solid rgba(128, 128, 128, 0.16);
-    padding: 0.55rem 0.35rem 0.8rem 0.2rem;
+    padding: 0.45rem 0.35rem 0.8rem 0.2rem;
 }
 
 .st-key-agent_history [data-testid="stChatMessage"],
@@ -111,7 +120,6 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     background: var(--background-color);
 }
 
-/* Pending approval needs more vertical room than the normal composer. */
 .st-key-agent_composer:has(.st-key-proposal_card) {
     height: 19rem;
 }
@@ -146,7 +154,6 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     min-width: 0;
 }
 
-/* Keep the global dataset lineage compact above the tabs. */
 .st-key-dataset_lineage {
     margin-top: 0 !important;
     margin-bottom: 0.15rem !important;

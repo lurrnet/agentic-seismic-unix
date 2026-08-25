@@ -14,8 +14,16 @@ def render_qc(state, history, current_path, metadata, preview_traces=None):
     if not filters:
         try:
             tr = load_preview_traces(current_path, metadata, preview_traces)
-            st.plotly_chart(section_figure(tr, metadata.dt_s, 'Current dataset'), use_container_width=True)
-            st.plotly_chart(spectrum_figure(tr, None, metadata.dt_s), use_container_width=True)
+            st.plotly_chart(
+                section_figure(tr, metadata.dt_s, 'Current dataset'),
+                use_container_width=True,
+                key='qc_current_section',
+            )
+            st.plotly_chart(
+                spectrum_figure(tr, None, metadata.dt_s),
+                use_container_width=True,
+                key='qc_current_spectrum',
+            )
         except Exception as exc:
             st.warning(str(exc))
         st.info('Apply a filter to enable before/after QC.')
@@ -41,7 +49,11 @@ def render_qc(state, history, current_path, metadata, preview_traces=None):
     )
 
     if view == 'Spectrum':
-        st.plotly_chart(spectrum_figure(before, after, bm.dt_s), use_container_width=True)
+        st.plotly_chart(
+            spectrum_figure(before, after, bm.dt_s),
+            use_container_width=True,
+            key='qc_compare_spectrum',
+        )
     elif view == 'Metrics':
         q1, q2, q3 = st.columns(3)
         q1.metric('Signal retention', f'{qc["signal_retention"]*100:.1f}%')
@@ -51,10 +63,22 @@ def render_qc(state, history, current_path, metadata, preview_traces=None):
     else:
         l, rr = st.columns(2)
         with l:
-            st.plotly_chart(section_figure(before, bm.dt_s, 'Before'), use_container_width=True)
+            st.plotly_chart(
+                section_figure(before, bm.dt_s, 'Before'),
+                use_container_width=True,
+                key='qc_before_section',
+            )
         with rr:
-            st.plotly_chart(section_figure(after, am.dt_s, 'After'), use_container_width=True)
-        st.plotly_chart(spectrum_figure(before, after, bm.dt_s), use_container_width=True)
+            st.plotly_chart(
+                section_figure(after, am.dt_s, 'After'),
+                use_container_width=True,
+                key='qc_after_section',
+            )
+        st.plotly_chart(
+            spectrum_figure(before, after, bm.dt_s),
+            use_container_width=True,
+            key='qc_seismic_compare_spectrum',
+        )
 
     reflection = st.session_state.get('last_reflection')
     if reflection:

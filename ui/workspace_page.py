@@ -1,4 +1,3 @@
-from pathlib import Path
 import streamlit as st
 
 from seismic.io import get_surange, load_preview_traces
@@ -9,7 +8,6 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
     top_left, top_right = st.columns([5, 1])
     with top_left:
         st.header('Workspace')
-        st.caption(f'Current dataset: {Path(state.current_dataset).name}')
     with top_right:
         new_project = st.button(
             'Load new dataset',
@@ -28,10 +26,12 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
         st.plotly_chart(
             section_figure(traces, metadata.dt_s, 'Current seismic section'),
             use_container_width=True,
+            key='workspace_current_section',
         )
         st.plotly_chart(
             spectrum_figure(traces, None, metadata.dt_s),
             use_container_width=True,
+            key='workspace_current_spectrum',
         )
     except Exception as exc:
         st.warning('Current dataset preview could not be generated.')

@@ -61,6 +61,12 @@ def validate_parameters(tool_spec, parameters, context=None):
         if 'min' in out and 'max' in out and not out['min'] <= out['max']:
             raise ValidationError('Selection bounds must satisfy min <= max.')
 
+    ordered_pair = validation.get('ordered_pair')
+    if ordered_pair and all(name in out for name in ordered_pair):
+        first, second = ordered_pair
+        if out[first] > out[second]:
+            raise ValidationError(f'{first} must be <= {second}.')
+
     same_length = validation.get('same_length')
     if same_length:
         lengths = [len(out[name]) for name in same_length if name in out]
@@ -75,6 +81,11 @@ def validate_parameters(tool_spec, parameters, context=None):
         if any(values[i] >= values[i + 1] for i in range(len(values) - 1)):
             raise ValidationError(f'{ordered_list} values must be strictly increasing.')
 
+    positive_list = validation.get('positive_list')
+    if positive_list and positive_list in out:
+        if any(value <= 0 for value in out[positive_list]):
+            raise ValidationError(f'{positive_list} values must all be > 0.')
+
     time_list = validation.get('time_list_within_trace')
     if time_list and time_list in out:
         dt_s = float(context.get('dt_s', 0.0) or 0.0)
@@ -85,6 +96,18 @@ def validate_parameters(tool_spec, parameters, context=None):
                 raise ValidationError(
                     f'{time_list} values must be within trace time range 0 to {max_time:.6g} s.'
                 )
+
+    time_values = validation.get('time_values_within_trace') or []
+    if time_values:
+        dt_s = float(context.get('dt_s', 0.0) or 0.0)
+        ns = int(context.get('ns', 0) or 0)
+        if dt_s > 0 and ns > 0:
+            max_time = (ns - 1) * dt_s
+            for name in time_values:
+                if name in out and not (0 <= float(out[name]) <= max_time):
+                    raise ValidationError(
+                        f'{name} must be within trace time range 0 to {max_time:.6g} s.'
+                    )
 
     key = validation.get('below_nyquist')
     if key and key in out and 'nyquist_hz' in context and out[key] >= float(context['nyquist_hz']):

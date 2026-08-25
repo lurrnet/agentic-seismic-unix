@@ -19,9 +19,11 @@ from ui.workspace_page import render_workspace
 from ui.processing_page import render_processing
 from ui.qc_page import render_qc
 from ui.history_page import render_history
+from ui.agent_details_page import render_agent_details
+from ui.readme_page import render_readme
 
 
-VERSION = '0.7.3'
+VERSION = '0.7.4'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -443,8 +445,8 @@ current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
 
 with workspace_col:
-    workspace_tab, processing_tab, qc_tab, history_tab = st.tabs(
-        ['Workspace', 'Processing', 'QC', 'History']
+    workspace_tab, processing_tab, qc_tab, history_tab, agent_details_tab, readme_tab = st.tabs(
+        ['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme']
     )
 
     new_project_requested = False
@@ -465,6 +467,16 @@ with workspace_col:
 
     with history_tab:
         render_history(state, history, registry)
+
+    with agent_details_tab:
+        render_agent_details(
+            provider_info=provider_info,
+            agent_ready=agent_ready,
+            agent_error=agent_error,
+        )
+
+    with readme_tab:
+        render_readme()
 
 if new_project_requested:
     for key in [

@@ -20,6 +20,8 @@ class SeismicAgent:
         text = user_text.lower()
         if any(token in text for token in ('review the filter', 'filter result', 'filtering result', 'did the filter', 'compare datasets', 'compare the result')):
             return 'compare_datasets', {}
+        if any(token in text for token in ('gather', 'fold', 'prestack', 'pre-stack', 'nmo', 'moveout', 'velocity analysis')):
+            return 'inspect_gathers', {'key': 'cdp', 'max_traces': 5000}
         if any(token in text for token in (
             'geometry', 'acquisition geometry', 'source coordinate', 'receiver coordinate',
             'set header', 'change header', 'rewrite header', 'sort dataset', 'sort traces',
@@ -34,6 +36,8 @@ class SeismicAgent:
                 'keys': ['fldr', 'tracf', 'cdp', 'offset', 'sx', 'gx'],
                 'max_traces': 1000,
             }
+        if any(token in text for token in ('decon', 'deconvolution', 'predictive error filter', 'pef', 'multiple suppression')):
+            return 'inspect_frequency', {'max_traces': 200}
         if any(token in text for token in ('resample', 'resampling', 'change sample interval', 'sample interval to', 'downsample', 'upsample')):
             return 'inspect_frequency', {'max_traces': 200}
         if any(token in text for token in ('amplitude', 'rms', 'dynamic range', 'gain', 'agc', 'clipping')):
@@ -65,6 +69,10 @@ class SeismicAgent:
             return 'apply_mute'
         if any(token in text for token in ('stack traces', 'stack dataset', 'stack by', 'run stack', 'apply stack', 'recommend stack', 'recommend stacking')):
             return 'stack_traces'
+        if any(token in text for token in ('apply decon', 'run decon', 'predictive decon', 'predictive error filter', 'apply pef', 'run pef', 'recommend decon', 'suggest decon')):
+            return 'apply_predictive_decon'
+        if any(token in text for token in ('apply nmo', 'run nmo', 'normal moveout', 'moveout correction', 'recommend nmo', 'suggest nmo')):
+            return 'apply_nmo'
         return None
 
     @staticmethod
@@ -72,12 +80,16 @@ class SeismicAgent:
         start_marker = '<SEISMIC_PROPOSAL>'
         end_marker = '</SEISMIC_PROPOSAL>'
         start = text.find(start_marker)
-        if start < 0: return None
+        if start < 0:
+            return None
         end = text.find(end_marker, start + len(start_marker))
-        if end < 0: return None
+        if end < 0:
+            return None
         raw = text[start + len(start_marker):end].strip()
-        try: obj = json.loads(raw)
-        except json.JSONDecodeError: return None
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
         return obj if isinstance(obj, dict) else None
 
     @staticmethod
@@ -85,9 +97,11 @@ class SeismicAgent:
         start_marker = '<SEISMIC_PROPOSAL>'
         end_marker = '</SEISMIC_PROPOSAL>'
         start = text.find(start_marker)
-        if start < 0: return text.strip()
+        if start < 0:
+            return text.strip()
         end = text.find(end_marker, start + len(start_marker))
-        if end < 0: return text.strip()
+        if end < 0:
+            return text.strip()
         return (text[:start] + text[end + len(end_marker):]).strip()
 
     @staticmethod
@@ -100,8 +114,10 @@ class SeismicAgent:
             'set_header_constant': '{"action":"set_header_constant","parameters":{"key":"header","value":integer},"reason":"short evidence-based reason"}',
             'sort_dataset': '{"action":"sort_dataset","parameters":{"key":"header"},"reason":"short evidence-based reason"}',
             'resample_dataset': '{"action":"resample_dataset","parameters":{"dt":number},"reason":"short evidence-based reason"}',
-            'apply_mute': '{"action":"apply_mute","parameters":{"key":"offset","xmute":[number,number],"tmute":[number,number],"mode":0_or_1,"ntaper":integer},"reason":"short evidence-based reason"}',
+            'apply_mute': '{"action":"apply_mute","parameters":{"key":"offset","xmute":[number,number],"tmute":[number,number],"mode":0,"ntaper":integer},"reason":"short evidence-based reason"}',
             'stack_traces': '{"action":"stack_traces","parameters":{"key":"cdp","normpow":number},"reason":"short evidence-based reason"}',
+            'apply_predictive_decon': '{"action":"apply_predictive_decon","parameters":{"minlag":number,"maxlag":number,"pnoise":number},"reason":"short evidence-based reason"}',
+            'apply_nmo': '{"action":"apply_nmo","parameters":{"tnmo":[number,number],"vnmo":[number,number],"smute":number,"lmute":integer,"sscale":1},"reason":"short evidence-based reason"}',
         }
         constraints = {
             'apply_bandpass_filter': 'Frequencies are Hz and must satisfy 0 <= f1 < f2 < f3 < f4 < Nyquist.',
@@ -111,8 +127,10 @@ class SeismicAgent:
             'set_header_constant': 'Only use a whitelisted header key. Header rewriting is high risk and always requires UI approval.',
             'sort_dataset': 'Use one whitelisted SU header key supported by the application.',
             'resample_dataset': 'dt is seconds. Use frequency/Nyquist evidence and avoid aliasing useful signal.',
-            'apply_mute': 'Use 2-32 strictly increasing xmute points and the same number of tmute values in seconds. mode=0 mutes above; mode=1 mutes below. tmute must lie inside the trace time range.',
+            'apply_mute': 'Use 2-32 strictly increasing xmute points and the same number of tmute values in seconds. mode=0 mutes above; mode=1 mutes below.',
             'stack_traces': 'Only propose stack by cdp, fldr, or ep. The application rejects stacking unless the current dataset is the direct output of sorting by that same key.',
+            'apply_predictive_decon': 'minlag and maxlag are seconds, must lie inside the trace duration, and minlag <= maxlag. pnoise is 0 to 1.',
+            'apply_nmo': 'tnmo is seconds and strictly increasing; vnmo contains positive RMS velocities with equal length. The application requires populated offset headers. This v0.9 tool supports one time-only velocity function, not lateral CDP-dependent velocity functions.',
         }
         return (
             '\n\nOpenClaw compatibility mode is active. The application owns processing execution. '
@@ -126,7 +144,8 @@ class SeismicAgent:
     def _create_pending_from_proposal(toolkit: AgentToolkit, proposal: dict[str, Any]) -> dict[str, Any]:
         action = proposal.get('action')
         params = proposal.get('parameters')
-        if not isinstance(params, dict): params = proposal
+        if not isinstance(params, dict):
+            params = proposal
         reason = proposal.get('reason') or 'Agent processing recommendation.'
         if action == 'apply_bandpass_filter': return toolkit.propose_bandpass({'f1': params.get('f1'), 'f2': params.get('f2'), 'f3': params.get('f3'), 'f4': params.get('f4'), 'reason': reason})
         if action == 'apply_gain': return toolkit.propose_gain({'tpow': params.get('tpow'), 'gpow': params.get('gpow'), 'qclip': params.get('qclip'), 'reason': reason})
@@ -137,10 +156,13 @@ class SeismicAgent:
         if action == 'resample_dataset': return toolkit.propose_resample({'dt': params.get('dt'), 'reason': reason})
         if action == 'apply_mute': return toolkit.propose_mute({'key': params.get('key'), 'xmute': params.get('xmute'), 'tmute': params.get('tmute'), 'mode': params.get('mode'), 'ntaper': params.get('ntaper', 0), 'reason': reason})
         if action == 'stack_traces': return toolkit.propose_stack({'key': params.get('key'), 'normpow': params.get('normpow', 1.0), 'reason': reason})
+        if action == 'apply_predictive_decon': return toolkit.propose_predictive_decon({'minlag': params.get('minlag'), 'maxlag': params.get('maxlag'), 'pnoise': params.get('pnoise', 0.001), 'reason': reason})
+        if action == 'apply_nmo': return toolkit.propose_nmo({'tnmo': params.get('tnmo'), 'vnmo': params.get('vnmo'), 'smute': params.get('smute', 1.5), 'lmute': params.get('lmute', 25), 'sscale': params.get('sscale', 1), 'reason': reason})
         raise ValueError(f'Unsupported proposal action: {action}')
 
     @property
-    def provider_info(self) -> dict[str, Any]: return self.provider.info()
+    def provider_info(self) -> dict[str, Any]:
+        return self.provider.info()
 
     def _runtime_context(self, toolkit: AgentToolkit) -> str:
         project_id = getattr(getattr(toolkit, 'project', None), 'project_id', 'unknown')
@@ -162,8 +184,10 @@ class SeismicAgent:
         evidence = None
         if routed is not None:
             routed_tool, routed_args = routed
-            try: result = toolkit.call(routed_tool, routed_args)
-            except Exception as exc: result = {'status': 'error', 'error': str(exc)}
+            try:
+                result = toolkit.call(routed_tool, routed_args)
+            except Exception as exc:
+                result = {'status': 'error', 'error': str(exc)}
             tool_trace.append({'tool': routed_tool, 'arguments': routed_args, 'result': result, 'routed_by': 'application'})
             evidence = {'tool': routed_tool, 'result': result}
         request_input = user_text if evidence is None else (
@@ -173,12 +197,14 @@ class SeismicAgent:
         )
         proposal_action = self._proposal_action(user_text)
         routed_instructions = SYSTEM_PROMPT + runtime_context
-        if proposal_action is not None: routed_instructions += self._proposal_instructions(proposal_action)
+        if proposal_action is not None:
+            routed_instructions += self._proposal_instructions(proposal_action)
         response = self.provider.create_response(instructions=routed_instructions, input=request_input, user=request_user)
         rounds = 0
         while rounds < max_tool_rounds:
             calls = [item for item in response.output if getattr(item, 'type', None) == 'function_call']
-            if not calls: break
+            if not calls:
+                break
             rounds += 1
             outputs = []
             for call in calls:
@@ -186,7 +212,8 @@ class SeismicAgent:
                 try:
                     arguments = json.loads(call.arguments or '{}')
                     result = toolkit.call(call.name, arguments)
-                except Exception as exc: result = {'status': 'error', 'error': str(exc)}
+                except Exception as exc:
+                    result = {'status': 'error', 'error': str(exc)}
                 tool_trace.append({'tool': call.name, 'arguments': arguments, 'result': result, 'routed_by': 'openclaw'})
                 outputs.append({'type': 'function_call_output', 'call_id': call.call_id, 'output': json.dumps(result, ensure_ascii=False)})
             response = self.provider.create_response(instructions=SYSTEM_PROMPT + runtime_context, previous_response_id=response.id, input=outputs, tools=TOOL_SCHEMAS, tool_choice='auto', user=request_user)
@@ -197,7 +224,8 @@ class SeismicAgent:
         proposal_source = 'structured_envelope' if proposal is not None else None
         if proposal_action is not None and proposal is None:
             proposal = parse_proposal_from_text(proposal_action, text)
-            if proposal is not None: proposal_source = proposal.get('parsed_from', 'text_fallback')
+            if proposal is not None:
+                proposal_source = proposal.get('parsed_from', 'text_fallback')
         if proposal is not None:
             clean_text = self._strip_application_proposal(text)
             try:
@@ -223,22 +251,28 @@ class SeismicAgent:
     def _run_native_function_calling(self, user_text: str, chat_history: list[dict[str, str]], toolkit: AgentToolkit, *, max_tool_rounds: int) -> dict[str, Any]:
         input_items = []
         for message in chat_history[-20:]:
-            role = message.get('role'); content = message.get('content', '')
-            if role in {'user', 'assistant'} and content: input_items.append({'role': role, 'content': content})
+            role = message.get('role')
+            content = message.get('content', '')
+            if role in {'user', 'assistant'} and content:
+                input_items.append({'role': role, 'content': content})
         input_items.append({'role': 'user', 'content': user_text})
         runtime_context = self._runtime_context(toolkit)
         response = self.provider.create_response(instructions=SYSTEM_PROMPT + runtime_context, input=input_items, tools=TOOL_SCHEMAS, tool_choice='auto')
-        tool_trace = []; rounds = 0
+        tool_trace = []
+        rounds = 0
         while rounds < max_tool_rounds:
             calls = [item for item in response.output if getattr(item, 'type', None) == 'function_call']
-            if not calls: break
-            rounds += 1; outputs = []
+            if not calls:
+                break
+            rounds += 1
+            outputs = []
             for call in calls:
                 arguments = {}
                 try:
                     arguments = json.loads(call.arguments or '{}')
                     result = toolkit.call(call.name, arguments)
-                except Exception as exc: result = {'status': 'error', 'error': str(exc)}
+                except Exception as exc:
+                    result = {'status': 'error', 'error': str(exc)}
                 tool_trace.append({'tool': call.name, 'arguments': arguments, 'result': result, 'routed_by': self.provider.name})
                 outputs.append({'type': 'function_call_output', 'call_id': call.call_id, 'output': json.dumps(result, ensure_ascii=False)})
             response = self.provider.create_response(instructions=SYSTEM_PROMPT + runtime_context, previous_response_id=response.id, input=outputs, tools=TOOL_SCHEMAS, tool_choice='auto')
@@ -251,8 +285,10 @@ class SeismicAgent:
         qc = toolkit.compare_datasets()
         if qc.get('status') != 'success':
             return {'status': 'not_available', 'text': qc.get('message', 'QC comparison is not available.'), 'decision': 'review_only', 'pending_action': None, 'qc': qc}
-        try: after_frequency = toolkit.inspect_frequency({'max_traces': max_traces})
-        except Exception as exc: after_frequency = {'status': 'error', 'error': str(exc)}
+        try:
+            after_frequency = toolkit.inspect_frequency({'max_traces': max_traces})
+        except Exception as exc:
+            after_frequency = {'status': 'error', 'error': str(exc)}
         runtime_context = self._runtime_context(toolkit)
         request_user = f"seismic-project-{getattr(toolkit.project, 'project_id', 'default')}"
         reflection_prompt = (
@@ -266,33 +302,45 @@ class SeismicAgent:
             f'QC_EVIDENCE:\n{json.dumps(qc, ensure_ascii=False, indent=2)}\n\nFILTERED_DATA_FREQUENCY_EVIDENCE:\n{json.dumps(after_frequency, ensure_ascii=False, indent=2)}'
         )
         kwargs = {'instructions': SYSTEM_PROMPT + runtime_context, 'input': reflection_prompt}
-        if self.provider.name == 'openclaw': kwargs['user'] = request_user
+        if self.provider.name == 'openclaw':
+            kwargs['user'] = request_user
         response = self.provider.create_response(**kwargs)
         raw_text = (response.output_text or '').strip()
-        try: parsed = extract_json_object(raw_text)
+        try:
+            parsed = extract_json_object(raw_text)
         except ReflectionParseError as exc:
             return {'status': 'unstructured', 'text': raw_text or 'The agent returned no reflection text.', 'decision': 'review_only', 'reason': str(exc), 'confidence': 'low', 'pending_action': None, 'qc': qc, 'after_frequency': after_frequency, 'raw_response': raw_text}
         decision = str(parsed.get('decision', 'accept')).strip().lower()
-        if decision not in {'accept', 'adjust'}: decision = 'accept'
+        if decision not in {'accept', 'adjust'}:
+            decision = 'accept'
         summary = str(parsed.get('summary') or 'QC review completed.').strip()
         reason = str(parsed.get('reason') or '').strip()
         confidence = str(parsed.get('confidence') or 'low').strip().lower()
-        if confidence not in {'low', 'medium', 'high'}: confidence = 'low'
-        pending_action = None; validation_error = None
+        if confidence not in {'low', 'medium', 'high'}:
+            confidence = 'low'
+        pending_action = None
+        validation_error = None
         if decision == 'adjust':
             adjusted = parsed.get('adjusted_filter')
             if isinstance(adjusted, dict):
                 try:
                     toolkit.propose_bandpass({'f1': adjusted.get('f1'), 'f2': adjusted.get('f2'), 'f3': adjusted.get('f3'), 'f4': adjusted.get('f4'), 'reason': reason or 'QC reflection recommended an adjusted bandpass.'})
                     pending_action = toolkit.pending_action
-                except Exception as exc: validation_error = str(exc); decision = 'accept'
-            else: validation_error = 'Agent selected adjust but did not provide adjusted_filter.'; decision = 'accept'
+                except Exception as exc:
+                    validation_error = str(exc)
+                    decision = 'accept'
+            else:
+                validation_error = 'Agent selected adjust but did not provide adjusted_filter.'
+                decision = 'accept'
         text = summary
-        if reason: text += f'\n\nReason: {reason}'
+        if reason:
+            text += f'\n\nReason: {reason}'
         text += f'\n\nReflection decision: **{decision.upper()}** · confidence: **{confidence}**.'
         if pending_action is not None:
-            p = pending_action['parameters']; text += f"\n\nSuggested follow-up filter: **{p['f1']:g} - {p['f2']:g} - {p['f3']:g} - {p['f4']:g} Hz**."
-        if validation_error: text += f'\n\nNo new proposal was created: `{validation_error}`'
+            p = pending_action['parameters']
+            text += f"\n\nSuggested follow-up filter: **{p['f1']:g} - {p['f2']:g} - {p['f3']:g} - {p['f4']:g} Hz**."
+        if validation_error:
+            text += f'\n\nNo new proposal was created: `{validation_error}`'
         return {'status': 'success', 'text': text, 'decision': decision, 'summary': summary, 'reason': reason, 'confidence': confidence, 'pending_action': pending_action, 'qc': qc, 'after_frequency': after_frequency, 'raw_response': raw_text, 'validation_error': validation_error, 'provider': self.provider.name, 'model': self.provider.model}
 
     def run_turn(self, user_text: str, chat_history: list[dict[str, str]], toolkit: AgentToolkit, *, max_tool_rounds: int = 8) -> dict[str, Any]:

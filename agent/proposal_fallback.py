@@ -81,38 +81,35 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
         ntaper = re.search(r'\bntaper\s*[:=]\s*([0-9]+)', text, flags=re.IGNORECASE)
         mode_match = re.search(r'\bmode\s*[:=]\s*([01])\b', text, flags=re.IGNORECASE)
         if not mode_match:
-            if re.search(r'\b(?:top|above)\s+mute\b', text, flags=re.IGNORECASE):
-                mode = 0
-            elif re.search(r'\b(?:bottom|below)\s+mute\b', text, flags=re.IGNORECASE):
-                mode = 1
-            else:
-                mode = None
+            if re.search(r'\b(?:top|above)\s+mute\b', text, flags=re.IGNORECASE): mode = 0
+            elif re.search(r'\b(?:bottom|below)\s+mute\b', text, flags=re.IGNORECASE): mode = 1
+            else: mode = None
         else:
             mode = int(mode_match.group(1))
         if key and xmute and tmute and mode is not None:
-            return {
-                'action': action,
-                'parameters': {
-                    'key': key.group(1).lower(),
-                    'xmute': _number_list(xmute.group(1)),
-                    'tmute': _number_list(tmute.group(1)),
-                    'mode': mode,
-                    'ntaper': int(ntaper.group(1)) if ntaper else 0,
-                },
-                'reason': 'Mute parameters parsed from text.',
-                'parsed_from': 'mute_labels',
-            }
+            return {'action': action, 'parameters': {'key': key.group(1).lower(), 'xmute': _number_list(xmute.group(1)), 'tmute': _number_list(tmute.group(1)), 'mode': mode, 'ntaper': int(ntaper.group(1)) if ntaper else 0}, 'reason': 'Mute parameters parsed from text.', 'parsed_from': 'mute_labels'}
 
     if action == 'stack_traces':
         key = re.search(r'\b(?:by|key\s*[:=]\s*)(cdp|fldr|ep)\b', text, flags=re.IGNORECASE)
         normpow = re.search(r'\bnormpow\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
         if key:
-            return {
-                'action': action,
-                'parameters': {'key': key.group(1).lower(), 'normpow': float(normpow.group(1)) if normpow else 1.0},
-                'reason': 'Stack parameters parsed from text.',
-                'parsed_from': 'stack_key',
-            }
+            return {'action': action, 'parameters': {'key': key.group(1).lower(), 'normpow': float(normpow.group(1)) if normpow else 1.0}, 'reason': 'Stack parameters parsed from text.', 'parsed_from': 'stack_key'}
+
+    if action == 'apply_predictive_decon':
+        minlag = re.search(r'\bminlag\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
+        maxlag = re.search(r'\bmaxlag\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
+        pnoise = re.search(r'\bpnoise\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
+        if minlag and maxlag:
+            return {'action': action, 'parameters': {'minlag': float(minlag.group(1)), 'maxlag': float(maxlag.group(1)), 'pnoise': float(pnoise.group(1)) if pnoise else 0.001}, 'reason': 'Predictive-decon parameters parsed from text.', 'parsed_from': 'decon_labels'}
+
+    if action == 'apply_nmo':
+        tnmo = re.search(r'\btnmo\s*[:=]\s*([0-9.,\s]+)', text, flags=re.IGNORECASE)
+        vnmo = re.search(r'\bvnmo\s*[:=]\s*([0-9.,\s]+)', text, flags=re.IGNORECASE)
+        smute = re.search(r'\bsmute\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
+        lmute = re.search(r'\blmute\s*[:=]\s*([0-9]+)', text, flags=re.IGNORECASE)
+        sscale = re.search(r'\bsscale\s*[:=]\s*([01])', text, flags=re.IGNORECASE)
+        if tnmo and vnmo:
+            return {'action': action, 'parameters': {'tnmo': _number_list(tnmo.group(1)), 'vnmo': _number_list(vnmo.group(1)), 'smute': float(smute.group(1)) if smute else 1.5, 'lmute': int(lmute.group(1)) if lmute else 25, 'sscale': int(sscale.group(1)) if sscale else 1}, 'reason': 'NMO parameters parsed from text.', 'parsed_from': 'nmo_labels'}
 
     return None
 
@@ -132,6 +129,8 @@ def parse_explicit_user_command(text: str) -> dict[str, Any] | None:
     elif re.search(r'\b(?:resample|resampling)\b', lowered): action = 'resample_dataset'
     elif re.search(r'\b(?:apply|run|execute)\b.*\bmute\b', lowered): action = 'apply_mute'
     elif re.search(r'\b(?:stack|stacking)\b.*\b(?:by|key|cdp|fldr|ep)\b', lowered): action = 'stack_traces'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\b(?:decon|deconvolution|pef|predictive error filter)\b', lowered): action = 'apply_predictive_decon'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\b(?:nmo|normal moveout|moveout correction)\b', lowered): action = 'apply_nmo'
 
     if action is None:
         return None

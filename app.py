@@ -24,7 +24,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.8.3'
+VERSION = '0.8.4'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -353,19 +353,36 @@ state = project.load_state()
 current = Path(state.current_dataset)
 metadata = read_su_metadata(current)
 with workspace_col:
-    render_dataset_lineage(state, history)
-    workspace_tab, processing_tab, qc_tab, history_tab, agent_details_tab, readme_tab = st.tabs(['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme'])
+    selected_step = render_dataset_lineage(state, history)
+    view_path = Path(selected_step['output']) if selected_step else current
+    view_metadata = read_su_metadata(view_path)
+
+    workspace_tab, processing_tab, qc_tab, history_tab, agent_details_tab, readme_tab = st.tabs(
+        ['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme']
+    )
     new_project_requested = False
-    with workspace_tab: new_project_requested = render_workspace(project, state, metadata, history, current, PREVIEW_TRACES)
-    with processing_tab: render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
+    with workspace_tab:
+        new_project_requested = render_workspace(
+            project, state, view_metadata, history, view_path, PREVIEW_TRACES
+        )
+    with processing_tab:
+        render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
     with qc_tab:
-        try: render_qc(state, history, current, metadata, PREVIEW_TRACES)
+        try:
+            render_qc(state, history, selected_step, PREVIEW_TRACES)
         except Exception as exc:
-            st.warning('QC page could not be rendered for the current dataset.')
+            st.warning('QC page could not be rendered for the selected dataset step.')
             st.code(str(exc))
-    with history_tab: render_history(state, history, registry)
-    with agent_details_tab: render_agent_details(provider_info=provider_info, agent_ready=agent_ready, agent_error=agent_error)
-    with readme_tab: render_readme()
+    with history_tab:
+        render_history(state, history, registry)
+    with agent_details_tab:
+        render_agent_details(
+            provider_info=provider_info,
+            agent_ready=agent_ready,
+            agent_error=agent_error,
+        )
+    with readme_tab:
+        render_readme()
 
 if new_project_requested:
     for key in [

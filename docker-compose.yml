@@ -2,17 +2,41 @@ services:
   seismic-agent:
     build:
       context: .
-    image: seismic-agent-v0.3.1:arm64
+    image: seismic-agent-v0.9.1:arm64
     container_name: agentic-seismic-unix
     restart: unless-stopped
+
+    # Retained for now because OpenClaw is intentionally bound only to host
+    # loopback (127.0.0.1:18789). Streamlit itself is also loopback-only, so
+    # external access should come through the host Cloudflare Tunnel.
     network_mode: host
-    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    command: >-
+      streamlit run app.py
+      --server.port=8501
+      --server.address=127.0.0.1
+
     env_file:
       - path: .env
         required: false
     environment:
       AGENT_CONFIG_PATH: ${AGENT_CONFIG_PATH:-/app/config/agent.yaml}
       AGENT_PROVIDER: ${AGENT_PROVIDER:-}
+      PYTHONDONTWRITEBYTECODE: "1"
+      HOME: /tmp
+      SECURITY_MAX_UPLOAD_BYTES: ${SECURITY_MAX_UPLOAD_BYTES:-2147483648}
+      SECURITY_MAX_PROJECT_BYTES: ${SECURITY_MAX_PROJECT_BYTES:-21474836480}
+      SECURITY_MAX_PROCESSING_STEPS: ${SECURITY_MAX_PROCESSING_STEPS:-100}
+      SECURITY_SU_TIMEOUT_SECONDS: ${SECURITY_SU_TIMEOUT_SECONDS:-1800}
+
     volumes:
       - ./data:/data
       - ./config:/app/config:ro
+
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1g
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256

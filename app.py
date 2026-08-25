@@ -13,6 +13,7 @@ from su.registry import ToolRegistry
 from su.executor import SUExecutor
 from su.importer import segy_to_su
 from seismic.io import read_su_metadata
+from security.policy import audit_event, enforce_upload_limit
 from ui.agent_panel import render_agent_panel
 from ui.workstation import workstation_columns
 from ui.workspace_page import render_workspace
@@ -24,7 +25,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.0'
+VERSION = '0.9.1'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -48,6 +49,7 @@ def get_reflection_config():
 
 
 def create_project(uploaded):
+    enforce_upload_limit(uploaded.size)
     project = Project(DATA_ROOT)
     raw = project.raw_dir / Path(uploaded.name).name
     su = project.data_dir / 'step000_import.su'
@@ -60,6 +62,11 @@ def create_project(uploaded):
         'input': str(raw), 'output': str(su), 'parameters': {},
         'reason': 'SEG-Y import', 'status': 'success',
     })
+    audit_event(
+        project,
+        'project_created',
+        details={'upload_name': Path(uploaded.name).name, 'upload_size': int(uploaded.size)},
+    )
     return project, state
 
 
@@ -284,6 +291,11 @@ if prompt:
 
 if decision == 'reject':
     action = st.session_state.pending_action or {}
+    audit_event(
+        project,
+        'processing_proposal_rejected_by_user',
+        details={'tool': action.get('tool'), 'parameters': action.get('parameters', {})},
+    )
     st.session_state.pending_action = None
     st.session_state.chat_messages.append({'role': 'assistant', 'content': f"The pending {action.get('display_name', 'processing')} proposal was rejected and no processing was run."})
     st.rerun()
@@ -300,6 +312,7 @@ if decision == 'approve':
         st.session_state.chat_messages.append({'role': 'assistant', 'content': completion_message})
         st.rerun()
     except Exception as exc:
+        audit_event(project, 'approved_processing_failed', severity='warning', details={'error': str(exc)})
         st.error('Approved processing failed.')
         st.code(str(exc))
 
@@ -316,6 +329,12 @@ if queued_prompt:
                     routed_by='explicit_followup_confirmation')
                 st.rerun()
             except Exception as exc:
+                audit_event(
+                    project,
+                    'followup_authorization_rejected',
+                    severity='warning',
+                    details={'error': str(exc)},
+                )
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
                     'content': f'I recognized your follow-up as authorization for the pending proposal, but execution failed validation: `{exc}`. No processing was run.'})
@@ -330,6 +349,12 @@ if queued_prompt:
                     routed_by='explicit_user_command')
                 st.rerun()
             except Exception as exc:
+                audit_event(
+                    project,
+                    'explicit_processing_command_rejected',
+                    severity='warning',
+                    details={'action': explicit_command.get('action'), 'error': str(exc)},
+                )
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
                     'content': f'I recognized an explicit processing command, but the application rejected it during validation: `{exc}`. No processing was run.'})

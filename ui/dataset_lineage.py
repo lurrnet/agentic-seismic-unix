@@ -13,6 +13,8 @@ TOOL_LABELS = {
     'suresamp': 'Resample',
     'sumute': 'Mute',
     'sustack': 'Stack',
+    'supef': 'Decon',
+    'sunmo': 'NMO',
 }
 
 

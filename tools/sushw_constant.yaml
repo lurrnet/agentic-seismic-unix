@@ -1,0 +1,19 @@
+name: sushw_constant
+display_name: Set Header Constant
+description: Set one whitelisted SU trace-header key to a constant value for all traces.
+category: geometry
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: always
+parameters:
+  key:
+    type: string
+    required: true
+    choices: [fldr, tracf, ep, cdp, cdpt, offset, sx, sy, gx, gy]
+  value: {type: int, required: true, minimum: -2147483648, maximum: 2147483647}
+execution:
+  executable: sushw
+  argument_template:
+    - "key={key}"
+    - "a={value}"

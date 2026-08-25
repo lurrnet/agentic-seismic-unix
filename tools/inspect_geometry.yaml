@@ -1,0 +1,9 @@
+name: inspect_geometry
+display_name: Inspect Geometry
+description: Summarize common acquisition and positioning headers without modifying data.
+category: inspection
+input_type: su
+output_type: json
+approval_level: auto
+parameters:
+  max_traces: {type: int, default: 2000, minimum: 1, maximum: 10000}

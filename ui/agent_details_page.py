@@ -27,6 +27,12 @@ def render_agent_details(
         if provider.get('provider') == 'openclaw':
             st.markdown(f"**Pinned Agent:** `{provider.get('agent_id') or 'not set'}`")
             st.markdown(f"**Tool Strategy:** `{provider.get('tool_strategy', 'unknown')}`")
+        if provider.get('knowledge_layer'):
+            st.markdown(f"**Knowledge Layer:** `{provider.get('knowledge_layer')}`")
+            st.caption(
+                f"Local SU docs: {provider.get('knowledge_docs_root', 'unknown')} · "
+                f"max {provider.get('knowledge_max_docs', 0)} docs/request"
+            )
     else:
         st.warning(agent_error or 'Agent is not configured.')
 

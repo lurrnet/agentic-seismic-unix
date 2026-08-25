@@ -1,17 +1,14 @@
 from pathlib import Path
 import subprocess
-import threading
 import time
 
+from security.job_control import heavy_job
 from security.policy import get_security_limits
 from .validator import validate_parameters
 
 
 class SUExecutionError(RuntimeError):
     pass
-
-
-_EXECUTION_LOCK = threading.Lock()
 
 
 def _decode(data):
@@ -32,48 +29,43 @@ class SUExecutor:
         fin = fout = None
         started = time.perf_counter()
         timeout = get_security_limits()['su_timeout_seconds']
-        if not _EXECUTION_LOCK.acquire(blocking=False):
-            raise SUExecutionError(
-                'Another Seismic Unix processing job is already running. '
-                'Concurrent SU execution is disabled by the security policy.'
-            )
-        try:
-            if stdin_path is not None:
-                fin = open(stdin_path, 'rb')
-            if stdout_path is not None:
-                fout = open(stdout_path, 'wb')
+        with heavy_job('Seismic Unix processing'):
             try:
-                process = subprocess.run(
-                    args,
-                    stdin=fin,
-                    stdout=fout if fout else subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                    timeout=timeout,
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise SUExecutionError(
-                    f'Command exceeded security timeout of {timeout} seconds: '
-                    f'{" ".join(str(x) for x in args)}'
-                ) from exc
-            if process.returncode != 0:
-                raise SUExecutionError(
-                    f'Command failed ({process.returncode}): '
-                    f'{" ".join(str(x) for x in args)}\n{_decode(process.stderr)}'
-                )
-            return {
-                'status': 'success',
-                'command': args,
-                'duration_sec': time.perf_counter() - started,
-                'stdout': _decode(process.stdout),
-                'stderr': _decode(process.stderr),
-            }
-        finally:
-            if fin:
-                fin.close()
-            if fout:
-                fout.close()
-            _EXECUTION_LOCK.release()
+                if stdin_path is not None:
+                    fin = open(stdin_path, 'rb')
+                if stdout_path is not None:
+                    fout = open(stdout_path, 'wb')
+                try:
+                    process = subprocess.run(
+                        args,
+                        stdin=fin,
+                        stdout=fout if fout else subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=False,
+                        timeout=timeout,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise SUExecutionError(
+                        f'Command exceeded security timeout of {timeout} seconds: '
+                        f'{" ".join(str(x) for x in args)}'
+                    ) from exc
+                if process.returncode != 0:
+                    raise SUExecutionError(
+                        f'Command failed ({process.returncode}): '
+                        f'{" ".join(str(x) for x in args)}\n{_decode(process.stderr)}'
+                    )
+                return {
+                    'status': 'success',
+                    'command': args,
+                    'duration_sec': time.perf_counter() - started,
+                    'stdout': _decode(process.stdout),
+                    'stderr': _decode(process.stderr),
+                }
+            finally:
+                if fin:
+                    fin.close()
+                if fout:
+                    fout.close()
 
     def execute_tool(self, tool_name, input_path, output_path, parameters, context=None):
         spec = self.registry.get(tool_name)
@@ -87,6 +79,7 @@ class SUExecutor:
             template.format(**formatted)
             for template in execution.get('argument_template', [])
         ]
+        output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             result = self.run_binary(args, stdin_path=input_path, stdout_path=output_path)

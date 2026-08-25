@@ -25,7 +25,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.1'
+VERSION = '0.9.2'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -62,11 +62,7 @@ def create_project(uploaded):
         'input': str(raw), 'output': str(su), 'parameters': {},
         'reason': 'SEG-Y import', 'status': 'success',
     })
-    audit_event(
-        project,
-        'project_created',
-        details={'upload_name': Path(uploaded.name).name, 'upload_size': int(uploaded.size)},
-    )
+    audit_event(project, 'project_created', details={'upload_name': Path(uploaded.name).name, 'upload_size': int(uploaded.size)})
     return project, state
 
 
@@ -105,13 +101,18 @@ def execute_pending_processing(project, state, history, engine, action):
         reason = f"Explicit follow-up confirmation: {action.get('reason', '')}"
     else:
         reason = f"Agent proposal approved by user: {action.get('reason', '')}"
-    rec = engine.run_processing_step(
-        state, tool_name, current, out, action['parameters'], reason)
+    try:
+        rec = engine.run_processing_step(
+            state, tool_name, current, out, action['parameters'], reason, project=project)
+    except Exception as exc:
+        audit_event(project, 'processing_execution_rejected_or_failed', severity='warning', details={'tool': tool_name, 'error': str(exc)})
+        raise
     refreshed = read_su_metadata(out)
     state.current_step = rec['step_id']
     state.current_dataset = str(out)
     state.metadata = refreshed.to_dict()
     project.save_state(state)
+    audit_event(project, 'processing_executed', details={'tool': tool_name, 'step_id': rec['step_id'], 'authorization': authorization})
     return rec, out
 
 
@@ -291,11 +292,7 @@ if prompt:
 
 if decision == 'reject':
     action = st.session_state.pending_action or {}
-    audit_event(
-        project,
-        'processing_proposal_rejected_by_user',
-        details={'tool': action.get('tool'), 'parameters': action.get('parameters', {})},
-    )
+    audit_event(project, 'processing_proposal_rejected_by_user', details={'tool': action.get('tool')})
     st.session_state.pending_action = None
     st.session_state.chat_messages.append({'role': 'assistant', 'content': f"The pending {action.get('display_name', 'processing')} proposal was rejected and no processing was run."})
     st.rerun()
@@ -312,7 +309,6 @@ if decision == 'approve':
         st.session_state.chat_messages.append({'role': 'assistant', 'content': completion_message})
         st.rerun()
     except Exception as exc:
-        audit_event(project, 'approved_processing_failed', severity='warning', details={'error': str(exc)})
         st.error('Approved processing failed.')
         st.code(str(exc))
 
@@ -329,12 +325,7 @@ if queued_prompt:
                     routed_by='explicit_followup_confirmation')
                 st.rerun()
             except Exception as exc:
-                audit_event(
-                    project,
-                    'followup_authorization_rejected',
-                    severity='warning',
-                    details={'error': str(exc)},
-                )
+                audit_event(project, 'followup_authorization_rejected', severity='warning', details={'error': str(exc), 'tool': (pending or {}).get('tool')})
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
                     'content': f'I recognized your follow-up as authorization for the pending proposal, but execution failed validation: `{exc}`. No processing was run.'})
@@ -349,12 +340,7 @@ if queued_prompt:
                     routed_by='explicit_user_command')
                 st.rerun()
             except Exception as exc:
-                audit_event(
-                    project,
-                    'explicit_processing_command_rejected',
-                    severity='warning',
-                    details={'action': explicit_command.get('action'), 'error': str(exc)},
-                )
+                audit_event(project, 'explicit_processing_command_rejected', severity='warning', details={'action': explicit_command.get('action'), 'error': str(exc)})
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
                     'content': f'I recognized an explicit processing command, but the application rejected it during validation: `{exc}`. No processing was run.'})

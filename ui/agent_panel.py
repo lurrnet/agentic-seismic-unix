@@ -19,35 +19,47 @@ def render_agent_panel(
                     title += f' · v{version}'
                 st.markdown(f'### {title}')
                 if not dataset_loaded:
-                    st.caption('Waiting for dataset')
+                    if agent_ready:
+                        provider = provider_info or {}
+                        label = 'OpenClaw' if provider.get('provider') == 'openclaw' else 'OpenAI'
+                        st.caption(
+                            f"Knowledge Mode · {label} · {provider.get('model', 'unknown model')}"
+                        )
+                    else:
+                        st.warning(agent_error or 'Agent is not configured.')
                 elif agent_ready:
                     provider = provider_info or {}
                     label = 'OpenClaw' if provider.get('provider') == 'openclaw' else 'OpenAI'
-                    st.caption(f"{label} · {provider.get('model', 'unknown model')}")
+                    st.caption(
+                        f"Project Mode · {label} · {provider.get('model', 'unknown model')}"
+                    )
                 else:
                     st.warning(agent_error or 'Agent is not configured.')
 
             with st.container(key='agent_history', border=False):
-                if not dataset_loaded:
-                    with st.chat_message('assistant'):
-                        st.markdown(
-                            'Load a SEG-Y dataset to start a seismic processing conversation.'
-                        )
-                else:
-                    for message in st.session_state.get('chat_messages', [])[-50:]:
+                messages = st.session_state.get('chat_messages', [])[-50:]
+                if messages:
+                    for message in messages:
                         with st.chat_message(message['role']):
                             st.markdown(message['content'])
+                elif not dataset_loaded:
+                    with st.chat_message('assistant'):
+                        st.markdown(
+                            'Knowledge Mode is available before loading data. Ask about Seismic Unix '
+                            'commands, parameters, or processing concepts. Upload SEG-Y to unlock '
+                            'dataset inspection and processing.'
+                        )
 
             with st.container(key='agent_composer', border=False):
                 decision = None
                 if dataset_loaded:
                     decision = render_proposal_card(st.session_state.get('pending_action'))
 
-                disabled = not (dataset_loaded and agent_ready)
+                disabled = not agent_ready
                 placeholder = (
                     'Ask about this dataset...'
                     if dataset_loaded
-                    else 'Upload a SEG-Y file to enable chat'
+                    else 'Ask about Seismic Unix...'
                 )
 
                 with st.form('agent_chat_form', clear_on_submit=True, border=False):

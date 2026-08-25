@@ -16,7 +16,6 @@ def render_agent_panel(
                 st.markdown('### Agentic SeismicUnix')
                 if not dataset_loaded:
                     st.caption('Waiting for dataset')
-                    st.info('Upload a SEG-Y file in the workspace to enable the agent.')
                 elif agent_ready:
                     provider = provider_info or {}
                     label = 'OpenClaw' if provider.get('provider') == 'openclaw' else 'OpenAI'

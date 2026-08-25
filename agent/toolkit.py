@@ -31,12 +31,7 @@ TOOL_SCHEMAS = [
         'parameters': {
             'type': 'object',
             'properties': {
-                'max_traces': {
-                    'type': 'integer',
-                    'description': 'Maximum traces to inspect.',
-                    'minimum': 1,
-                    'maximum': 1000,
-                }
+                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 1000}
             },
             'required': ['max_traces'],
             'additionalProperties': False,
@@ -56,13 +51,23 @@ TOOL_SCHEMAS = [
                     'minItems': 1,
                     'maxItems': 12,
                 },
-                'max_traces': {
-                    'type': 'integer',
-                    'minimum': 1,
-                    'maximum': 10000,
-                },
+                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 10000},
             },
             'required': ['keys', 'max_traces'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'inspect_geometry',
+        'description': 'Inspect common acquisition/geometry headers including field record, CDP, offset, coordinates and scalco.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 10000}
+            },
+            'required': ['max_traces'],
             'additionalProperties': False,
         },
         'strict': True,
@@ -74,11 +79,7 @@ TOOL_SCHEMAS = [
         'parameters': {
             'type': 'object',
             'properties': {
-                'max_traces': {
-                    'type': 'integer',
-                    'minimum': 1,
-                    'maximum': 1000,
-                }
+                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 1000}
             },
             'required': ['max_traces'],
             'additionalProperties': False,
@@ -88,14 +89,12 @@ TOOL_SCHEMAS = [
     {
         'type': 'function',
         'name': 'apply_bandpass_filter',
-        'description': 'Propose a four-corner sufilter bandpass. Creates a pending action and requires explicit user approval.',
+        'description': 'Propose a four-corner sufilter bandpass.',
         'parameters': {
             'type': 'object',
             'properties': {
-                'f1': {'type': 'number'},
-                'f2': {'type': 'number'},
-                'f3': {'type': 'number'},
-                'f4': {'type': 'number'},
+                'f1': {'type': 'number'}, 'f2': {'type': 'number'},
+                'f3': {'type': 'number'}, 'f4': {'type': 'number'},
                 'reason': {'type': 'string'},
             },
             'required': ['f1', 'f2', 'f3', 'f4', 'reason'],
@@ -106,14 +105,12 @@ TOOL_SCHEMAS = [
     {
         'type': 'function',
         'name': 'apply_gain',
-        'description': 'Propose deterministic sugain time/power gain and clipping. Requires explicit user approval.',
+        'description': 'Propose deterministic sugain time/power gain and clipping.',
         'parameters': {
             'type': 'object',
             'properties': {
-                'tpow': {'type': 'number'},
-                'gpow': {'type': 'number'},
-                'qclip': {'type': 'number'},
-                'reason': {'type': 'string'},
+                'tpow': {'type': 'number'}, 'gpow': {'type': 'number'},
+                'qclip': {'type': 'number'}, 'reason': {'type': 'string'},
             },
             'required': ['tpow', 'gpow', 'qclip', 'reason'],
             'additionalProperties': False,
@@ -123,13 +120,10 @@ TOOL_SCHEMAS = [
     {
         'type': 'function',
         'name': 'apply_agc',
-        'description': 'Propose automatic gain control using sugain agc=1. wagc is the AGC window length in seconds. Requires approval.',
+        'description': 'Propose automatic gain control using sugain agc=1. wagc is in seconds.',
         'parameters': {
             'type': 'object',
-            'properties': {
-                'wagc': {'type': 'number'},
-                'reason': {'type': 'string'},
-            },
+            'properties': {'wagc': {'type': 'number'}, 'reason': {'type': 'string'}},
             'required': ['wagc', 'reason'],
             'additionalProperties': False,
         },
@@ -138,16 +132,53 @@ TOOL_SCHEMAS = [
     {
         'type': 'function',
         'name': 'select_traces',
-        'description': 'Propose selecting a subset of traces using suwind key/min/max. Requires approval.',
+        'description': 'Propose selecting a subset of traces using suwind key/min/max.',
         'parameters': {
             'type': 'object',
             'properties': {
-                'key': {'type': 'string'},
-                'min': {'type': 'number'},
-                'max': {'type': 'number'},
-                'reason': {'type': 'string'},
+                'key': {'type': 'string'}, 'min': {'type': 'number'},
+                'max': {'type': 'number'}, 'reason': {'type': 'string'},
             },
             'required': ['key', 'min', 'max', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'set_header_constant',
+        'description': 'Propose setting one whitelisted SU header key to a constant integer for every trace. Always requires UI approval.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string'}, 'value': {'type': 'integer'},
+                'reason': {'type': 'string'},
+            },
+            'required': ['key', 'value', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'sort_dataset',
+        'description': 'Propose sorting the current SU dataset by one whitelisted trace-header key.',
+        'parameters': {
+            'type': 'object',
+            'properties': {'key': {'type': 'string'}, 'reason': {'type': 'string'}},
+            'required': ['key', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'resample_dataset',
+        'description': 'Propose resampling the current SU dataset to a new sample interval dt in seconds.',
+        'parameters': {
+            'type': 'object',
+            'properties': {'dt': {'type': 'number'}, 'reason': {'type': 'string'}},
+            'required': ['dt', 'reason'],
             'additionalProperties': False,
         },
         'strict': True,
@@ -176,24 +207,19 @@ class AgentToolkit:
         return Path(self.state.current_dataset)
 
     def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if name == 'inspect_dataset':
-            return self.inspect_dataset()
-        if name == 'inspect_frequency':
-            return self.inspect_frequency(arguments)
-        if name == 'inspect_headers':
-            return self.inspect_headers(arguments)
-        if name == 'inspect_amplitude':
-            return self.inspect_amplitude(arguments)
-        if name == 'apply_bandpass_filter':
-            return self.propose_bandpass(arguments)
-        if name == 'apply_gain':
-            return self.propose_gain(arguments)
-        if name == 'apply_agc':
-            return self.propose_agc(arguments)
-        if name == 'select_traces':
-            return self.propose_trace_selection(arguments)
-        if name == 'compare_datasets':
-            return self.compare_datasets()
+        if name == 'inspect_dataset': return self.inspect_dataset()
+        if name == 'inspect_frequency': return self.inspect_frequency(arguments)
+        if name == 'inspect_headers': return self.inspect_headers(arguments)
+        if name == 'inspect_geometry': return self.inspect_geometry(arguments)
+        if name == 'inspect_amplitude': return self.inspect_amplitude(arguments)
+        if name == 'apply_bandpass_filter': return self.propose_bandpass(arguments)
+        if name == 'apply_gain': return self.propose_gain(arguments)
+        if name == 'apply_agc': return self.propose_agc(arguments)
+        if name == 'select_traces': return self.propose_trace_selection(arguments)
+        if name == 'set_header_constant': return self.propose_header_constant(arguments)
+        if name == 'sort_dataset': return self.propose_sort(arguments)
+        if name == 'resample_dataset': return self.propose_resample(arguments)
+        if name == 'compare_datasets': return self.compare_datasets()
         raise KeyError(f'Unknown agent tool: {name}')
 
     def inspect_dataset(self) -> dict[str, Any]:
@@ -214,8 +240,7 @@ class AgentToolkit:
         }
 
     def inspect_frequency(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        requested = int(arguments.get('max_traces', self.preview_traces))
-        requested = max(1, min(requested, 1000))
+        requested = max(1, min(int(arguments.get('max_traces', self.preview_traces)), 1000))
         m = read_su_metadata(self.current_path)
         traces = load_preview_traces(self.current_path, m, requested)
         summary = summarize_frequency_content(traces, m.dt_s)
@@ -232,6 +257,20 @@ class AgentToolkit:
         m = read_su_metadata(self.current_path)
         result = summarize_su_headers(self.current_path, m, keys, requested)
         return {'dataset': str(self.current_path), **result}
+
+    def inspect_geometry(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        requested = max(1, min(int(arguments.get('max_traces', 2000)), 10000))
+        keys = ['fldr', 'tracf', 'cdp', 'cdpt', 'offset', 'sx', 'sy', 'gx', 'gy', 'scalco']
+        m = read_su_metadata(self.current_path)
+        result = summarize_su_headers(self.current_path, m, keys, requested)
+        return {
+            'dataset': str(self.current_path),
+            **result,
+            'coordinate_note': (
+                'sx/sy/gx/gy are raw SU header values. Interpret physical coordinates with scalco; '
+                'positive scalco multiplies, negative scalco divides by its absolute value, and zero means 1.'
+            ),
+        }
 
     def inspect_amplitude(self, arguments: dict[str, Any]) -> dict[str, Any]:
         requested = max(1, min(int(arguments.get('max_traces', self.preview_traces)), 1000))
@@ -253,18 +292,10 @@ class AgentToolkit:
             'zero_fraction': float(np.mean(flat == 0.0)),
         }
 
-    def _propose_processing(
-        self,
-        *,
-        action_name: str,
-        registry_tool: str,
-        parameters: dict[str, Any],
-        reason: str,
-        operation: str,
-    ) -> dict[str, Any]:
+    def _propose_processing(self, *, action_name, registry_tool, parameters, reason, operation):
         spec = self.registry.get(registry_tool)
         if spec.get('approval_level') != 'processing':
-            raise ValueError(f'{registry_tool} is not configured as approval-gated processing.')
+            raise ValueError(f'{registry_tool} is not configured as processing.')
         params = validate_parameters(spec, parameters, context=self.state.metadata)
         pending = {
             'type': 'processing',
@@ -274,6 +305,7 @@ class AgentToolkit:
             'display_name': spec.get('display_name', registry_tool),
             'category': spec.get('category', 'processing'),
             'approval_level': spec.get('approval_level', 'processing'),
+            'approval_policy': spec.get('approval_policy', 'always'),
             'input': str(self.current_path),
             'parameters': params,
             'reason': str(reason).strip(),
@@ -282,54 +314,53 @@ class AgentToolkit:
         self.pending_action = pending
         return {
             'status': 'pending_approval',
-            'message': f"{pending['display_name']} proposal created. User approval is required before execution.",
+            'message': f"{pending['display_name']} proposal created.",
             'proposal': pending,
         }
 
-    def propose_bandpass(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def propose_bandpass(self, arguments):
         return self._propose_processing(
-            action_name='apply_bandpass_filter',
-            registry_tool='sufilter',
+            action_name='apply_bandpass_filter', registry_tool='sufilter',
             parameters={k: arguments[k] for k in ('f1', 'f2', 'f3', 'f4')},
-            reason=arguments['reason'],
-            operation='filter',
-        )
+            reason=arguments['reason'], operation='filter')
 
-    def propose_gain(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def propose_gain(self, arguments):
         return self._propose_processing(
-            action_name='apply_gain',
-            registry_tool='sugain',
+            action_name='apply_gain', registry_tool='sugain',
             parameters={k: arguments[k] for k in ('tpow', 'gpow', 'qclip')},
-            reason=arguments['reason'],
-            operation='gain',
-        )
+            reason=arguments['reason'], operation='gain')
 
-    def propose_agc(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def propose_agc(self, arguments):
         return self._propose_processing(
-            action_name='apply_agc',
-            registry_tool='suagc',
-            parameters={'wagc': arguments['wagc']},
-            reason=arguments['reason'],
-            operation='agc',
-        )
+            action_name='apply_agc', registry_tool='suagc',
+            parameters={'wagc': arguments['wagc']}, reason=arguments['reason'], operation='agc')
 
-    def propose_trace_selection(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def propose_trace_selection(self, arguments):
         return self._propose_processing(
-            action_name='select_traces',
-            registry_tool='suwind',
+            action_name='select_traces', registry_tool='suwind',
             parameters={k: arguments[k] for k in ('key', 'min', 'max')},
-            reason=arguments['reason'],
-            operation='select',
-        )
+            reason=arguments['reason'], operation='select')
+
+    def propose_header_constant(self, arguments):
+        return self._propose_processing(
+            action_name='set_header_constant', registry_tool='sushw_constant',
+            parameters={'key': arguments['key'], 'value': arguments['value']},
+            reason=arguments['reason'], operation='header')
+
+    def propose_sort(self, arguments):
+        return self._propose_processing(
+            action_name='sort_dataset', registry_tool='susort',
+            parameters={'key': arguments['key']}, reason=arguments['reason'], operation='sort')
+
+    def propose_resample(self, arguments):
+        return self._propose_processing(
+            action_name='resample_dataset', registry_tool='suresamp',
+            parameters={'dt': arguments['dt']}, reason=arguments['reason'], operation='resample')
 
     def compare_datasets(self) -> dict[str, Any]:
-        filters = [
-            r for r in self.history.list()
-            if r.get('tool') == 'sufilter' and r.get('status') == 'success'
-        ]
+        filters = [r for r in self.history.list() if r.get('tool') == 'sufilter' and r.get('status') == 'success']
         if not filters:
             return {'status': 'not_available', 'message': 'No completed sufilter step exists yet.'}
-
         latest = filters[-1]
         before_path = Path(latest['input'])
         after_path = Path(latest['output'])
@@ -339,13 +370,8 @@ class AgentToolkit:
         after = load_preview_traces(after_path, am, self.preview_traces)
         p = latest['parameters']
         qc = compare_filter_result(
-            before,
-            after,
-            bm.dt_s,
-            float(p['f2']),
-            float(p['f3']),
-            float(p['f4']),
-        )
+            before, after, bm.dt_s,
+            float(p['f2']), float(p['f3']), float(p['f4']))
         return {
             'status': 'success',
             'step_id': latest['step_id'],

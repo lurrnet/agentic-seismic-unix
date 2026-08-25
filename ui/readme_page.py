@@ -32,8 +32,10 @@ Read-only tools may run automatically.
 - **AGC (`sugain agc=1`)** — automatic gain control using `wagc` in seconds.
 - **Trace Selection (`suwind`)** — select traces by header key and min/max limits.
 - **Sort Dataset (`susort`)** — sort traces by one whitelisted SU header key.
-- **Resample Dataset (`suresamp`)** — change the sample interval using `dt` in seconds. The application refreshes metadata after execution.
-- **Set Header Constant (`sushw`)** — set one whitelisted header key to a constant integer for all traces. This is intentionally restricted and always approval-gated.
+- **Resample Dataset (`suresamp`)** — change the sample interval using `dt` in seconds.
+- **Mute (`sumute`)** — bounded polygonal top or bottom mute. `mode=0` mutes above the curve and `mode=1` mutes below. `xmute` and `tmute` must contain the same number of points; `xmute` must increase strictly and `tmute` values must remain inside the trace time range.
+- **Stack (`sustack`)** — stack adjacent traces sharing `cdp`, `fldr`, or `ep`. For safety, the current dataset must be the direct output of `susort` using the same key immediately before stacking.
+- **Set Header Constant (`sushw`)** — set one whitelisted header key to a constant integer for all traces. This operation always requires approval.
 
 ## Approval behavior
 
@@ -43,25 +45,35 @@ The application distinguishes between recommendations, explicit commands, and hi
 - `Apply AGC with a 0.5 s window.` → exact user command; may execute directly after validation.
 - `Sort the dataset by cdp.` → exact user command; may execute directly after validation.
 - `Resample to 2 ms.` → exact user command; may execute directly after validation.
-- `Set cdp header to 100.` → header rewrite; **always requires UI approval** even though the value is explicit.
+- `Set cdp header to 100.` → header rewrite; **always requires UI approval**.
 - After a normal pending proposal, `apply it`, `go ahead`, or similar wording authorizes that exact proposal only when its tool policy allows explicit execution.
+
+## Mute workflow
+
+Mute is intentionally exposed as a high-level structured capability rather than raw `sumute` arguments. A typical explicit command is:
+
+`Apply top mute key=offset xmute=0,1000,2000 tmute=0.10,0.20,0.35 ntaper=20.`
+
+The application validates the header key, curve lengths, ordering, trace-time bounds, mode, and taper before execution.
+
+## Stack workflow
+
+`stack_traces` does not silently regroup arbitrary traces. `sustack` stacks adjacent traces with the same key, so this application requires an immediately preceding sort using that key.
+
+Example:
+
+1. `Sort the dataset by cdp.`
+2. `Stack by cdp.`
+
+If another processing step occurs between the sort and stack, the stack guard requires sorting again.
 
 ## Geometry notes
 
-SU coordinate headers such as `sx`, `sy`, `gx`, and `gy` are stored as raw integer header values. Their physical interpretation depends on `scalco`: positive values multiply coordinates, negative values divide by the absolute value, and zero is treated as a scale of 1. Geometry/header edits should therefore be inspected before modification.
+SU coordinate headers such as `sx`, `sy`, `gx`, and `gy` are stored as raw integer header values. Their physical interpretation depends on `scalco`: positive values multiply coordinates, negative values divide by the absolute value, and zero is treated as a scale of 1.
 
 ## Example requests
 
-### Inspection
-
-- `Inspect this dataset.`
-- `What is the frequency content?`
 - `Inspect the acquisition geometry.`
-- `Inspect CDP and offset ranges.`
-- `Show me the amplitude statistics.`
-
-### Processing
-
 - `Recommend a reasonable bandpass filter.`
 - `Apply a bandpass of 8-15-50-60 Hz.`
 - `Recommend an AGC window.`
@@ -69,6 +81,9 @@ SU coordinate headers such as `sx`, `sy`, `gx`, and `gy` are stored as raw integ
 - `Select traces with offset between -2000 and 2000.`
 - `Sort the dataset by cdp.`
 - `Resample to 2 ms.`
+- `Recommend a top mute using offset.`
+- `Apply top mute key=offset xmute=0,1000 tmute=0.1,0.25 ntaper=20.`
+- `Stack by cdp.`
 - `Set cdp header to 100.`
 
 ## Main tabs
@@ -82,7 +97,7 @@ SU coordinate headers such as `sx`, `sy`, `gx`, and `gy` are stored as raw integ
 
 ## Safety model
 
-The agent never receives unrestricted shell access. It works through structured application capabilities backed by validated SU commands. Processing writes new output datasets rather than silently overwriting the current file. Header rewriting is intentionally narrower than raw `sushw`, and project history records the processing lineage.
+The agent never receives unrestricted shell access. It works through structured application capabilities backed by validated SU commands. Processing writes new output datasets rather than silently overwriting the current file. Header rewriting is intentionally narrower than raw `sushw`, mute curves are bounded and validated, stacking requires deterministic sort provenance, and project history records the processing lineage.
 '''
 
 

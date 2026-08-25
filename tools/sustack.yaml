@@ -1,0 +1,23 @@
+name: sustack
+display_name: Stack Traces
+description: Stack adjacent traces that share one validated gather key. Current data must already be sorted by the same key.
+category: stack
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: explicit_or_approval
+parameters:
+  key:
+    type: string
+    required: true
+    choices: [cdp, fldr, ep]
+  normpow:
+    type: float
+    default: 1.0
+    minimum: 0.0
+    maximum: 1.0
+execution:
+  executable: sustack
+  argument_template:
+    - "key={key}"
+    - "normpow={normpow}"

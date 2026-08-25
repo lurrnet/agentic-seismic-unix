@@ -1,0 +1,31 @@
+name: supef
+display_name: Predictive Deconvolution
+description: Apply Wiener predictive error filtering with bounded lag and noise parameters.
+category: deconvolution
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: explicit_or_approval
+parameters:
+  minlag:
+    type: float
+    required: true
+    minimum: 0.0
+  maxlag:
+    type: float
+    required: true
+    minimum: 0.0
+  pnoise:
+    type: float
+    default: 0.001
+    minimum: 0.0
+    maximum: 1.0
+validation:
+  ordered_pair: [minlag, maxlag]
+  time_values_within_trace: [minlag, maxlag]
+execution:
+  executable: supef
+  argument_template:
+    - "minlag={minlag}"
+    - "maxlag={maxlag}"
+    - "pnoise={pnoise}"

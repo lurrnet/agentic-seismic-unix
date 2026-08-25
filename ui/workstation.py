@@ -4,7 +4,8 @@ import streamlit as st
 WORKSTATION_CSS = r"""
 <style>
 /* Reduce Streamlit's default page-top whitespace for the workstation. */
-div[data-testid="stMainBlockContainer"] {
+div[data-testid="stMainBlockContainer"],
+.block-container {
     padding-top: 0.45rem !important;
 }
 

@@ -5,6 +5,11 @@ class SUExecutionError(RuntimeError): pass
 
 def _decode(data): return (data or b'').decode('utf-8',errors='replace')
 
+def _format_value(value):
+    if isinstance(value, (list, tuple)):
+        return ','.join(f'{float(item):g}' for item in value)
+    return value
+
 class SUExecutor:
     def __init__(self, registry): self.registry=registry
     def run_binary(self,args,stdin_path=None,stdout_path=None):
@@ -22,7 +27,8 @@ class SUExecutor:
         spec=self.registry.get(tool_name); params=validate_parameters(spec,parameters,context=context)
         ex=spec.get('execution',{}); executable=ex.get('executable')
         if not executable: raise SUExecutionError(f'Tool {tool_name} has no executable definition.')
-        args=[executable]+[t.format(**params) for t in ex.get('argument_template',[])]
+        formatted={k:_format_value(v) for k,v in params.items()}
+        args=[executable]+[t.format(**formatted) for t in ex.get('argument_template',[])]
         output_path.parent.mkdir(parents=True,exist_ok=True)
         result=self.run_binary(args,stdin_path=input_path,stdout_path=output_path)
         if not output_path.exists() or output_path.stat().st_size==0: raise SUExecutionError(f'{tool_name} produced an empty output file.')

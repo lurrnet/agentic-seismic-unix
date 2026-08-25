@@ -2,15 +2,15 @@ provider: openclaw
 fallback_provider: null
 
 openclaw:
-  # This project targets a Linux OCI VM. docker-compose uses host networking
-  # so a host-local OpenClaw Gateway can stay bound to 127.0.0.1.
+  # OpenClaw stays host-local and is never exposed directly to the Internet.
+  # docker-compose currently retains host networking only because the Gateway
+  # is bound to 127.0.0.1 on the OCI host.
   base_url: http://127.0.0.1:18789/v1
   model: openclaw/default
   credential_env: OPENCLAW_GATEWAY_TOKEN
-  # Optional explicit OpenClaw agent id. Leave null when model already routes it.
-  agent_id: null
-  # application_routed avoids depending on the backend model to emit a forced client function call.
-  # Set to native only if your OpenClaw backend reliably supports client-side function calling.
+  # Dedicated least-privilege agent for the public-facing seismic web app.
+  agent_id: oci-seismic
+  # Keep application-side routing so the model never owns SU execution.
   tool_strategy: application_routed
 
 openai:

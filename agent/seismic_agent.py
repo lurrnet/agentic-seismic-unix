@@ -17,7 +17,6 @@ class SeismicAgent:
 
     @staticmethod
     def _route_read_tool(user_text: str) -> tuple[str, dict[str, Any]] | None:
-        """Choose safe read-only evidence for OpenClaw application routing."""
         text = user_text.lower()
 
         if any(token in text for token in (
@@ -27,14 +26,26 @@ class SeismicAgent:
             return 'compare_datasets', {}
 
         if any(token in text for token in (
-            'header', 'geometry', 'offset', 'cdp', 'source coordinate',
-            'receiver coordinate', 'fldr', 'tracf', 'select traces',
+            'geometry', 'acquisition geometry', 'source coordinate', 'receiver coordinate',
+            'set header', 'change header', 'rewrite header', 'sort dataset', 'sort traces',
+            'sort by', 'order by',
+        )):
+            return 'inspect_geometry', {'max_traces': 2000}
+
+        if any(token in text for token in (
+            'header', 'offset', 'cdp', 'fldr', 'tracf', 'select traces',
             'trace selection', 'subset traces', 'suwind',
         )):
             return 'inspect_headers', {
                 'keys': ['fldr', 'tracf', 'cdp', 'offset', 'sx', 'gx'],
                 'max_traces': 1000,
             }
+
+        if any(token in text for token in (
+            'resample', 'resampling', 'change sample interval', 'sample interval to',
+            'downsample', 'upsample',
+        )):
+            return 'inspect_frequency', {'max_traces': 200}
 
         if any(token in text for token in (
             'amplitude', 'rms', 'dynamic range', 'gain', 'agc', 'clipping',
@@ -84,6 +95,24 @@ class SeismicAgent:
             'window traces', 'apply suwind', 'run suwind',
         )):
             return 'select_traces'
+
+        if any(token in text for token in (
+            'set header', 'change header', 'rewrite header', 'set cdp', 'set fldr',
+            'set offset', 'set sx', 'set sy', 'set gx', 'set gy',
+        )):
+            return 'set_header_constant'
+
+        if any(token in text for token in (
+            'sort dataset', 'sort traces', 'sort by', 'order by',
+            'recommend sort', 'recommend sorting',
+        )):
+            return 'sort_dataset'
+
+        if any(token in text for token in (
+            'resample', 'resampling', 'change sample interval', 'sample interval to',
+            'downsample', 'upsample',
+        )):
+            return 'resample_dataset'
 
         return None
 
@@ -138,6 +167,19 @@ class SeismicAgent:
                 '{"key":"header","min":number,"max":number},'
                 '"reason":"short evidence-based reason"}'
             ),
+            'set_header_constant': (
+                '{"action":"set_header_constant","parameters":'
+                '{"key":"header","value":integer},'
+                '"reason":"short evidence-based reason"}'
+            ),
+            'sort_dataset': (
+                '{"action":"sort_dataset","parameters":{"key":"header"},'
+                '"reason":"short evidence-based reason"}'
+            ),
+            'resample_dataset': (
+                '{"action":"resample_dataset","parameters":{"dt":number},'
+                '"reason":"short evidence-based reason"}'
+            ),
         }
         constraints = {
             'apply_bandpass_filter': (
@@ -149,7 +191,18 @@ class SeismicAgent:
             ),
             'apply_agc': 'wagc is the AGC window length in seconds and must be 0.01 to 10 seconds.',
             'select_traces': 'Use one inspected SU header key and require min <= max.',
+            'set_header_constant': (
+                'Only use a whitelisted header key. Header rewriting is high risk and always requires UI approval.'
+            ),
+            'sort_dataset': 'Use one whitelisted SU header key supported by the application.',
+            'resample_dataset': (
+                'dt is seconds. Use frequency/Nyquist evidence and avoid a sample interval that would alias useful signal.'
+            ),
         }
+        approval_text = (
+            'The application will validate the proposal. Header rewriting always requires explicit UI approval. '
+            'Other processing proposals remain pending unless the application has separate explicit user authorization.'
+        )
         return (
             '\n\nOpenClaw compatibility mode is active. The application owns processing execution. '
             'Do not claim the processing tool is unavailable and do not claim processing ran. '
@@ -158,8 +211,7 @@ class SeismicAgent:
             '<SEISMIC_PROPOSAL>\n'
             f'{formats[action]}\n'
             '</SEISMIC_PROPOSAL>\n'
-            f'{constraints[action]} The application will validate the proposal and require explicit '
-            'human approval before execution. If evidence is insufficient, do not emit an envelope.'
+            f'{constraints[action]} {approval_text} If evidence is insufficient, do not emit an envelope.'
         )
 
     @staticmethod
@@ -181,23 +233,24 @@ class SeismicAgent:
             })
         if action == 'apply_gain':
             return toolkit.propose_gain({
-                'tpow': params.get('tpow'),
-                'gpow': params.get('gpow'),
-                'qclip': params.get('qclip'),
-                'reason': reason,
+                'tpow': params.get('tpow'), 'gpow': params.get('gpow'),
+                'qclip': params.get('qclip'), 'reason': reason,
             })
         if action == 'apply_agc':
-            return toolkit.propose_agc({
-                'wagc': params.get('wagc'),
-                'reason': reason,
-            })
+            return toolkit.propose_agc({'wagc': params.get('wagc'), 'reason': reason})
         if action == 'select_traces':
             return toolkit.propose_trace_selection({
-                'key': params.get('key'),
-                'min': params.get('min'),
-                'max': params.get('max'),
-                'reason': reason,
+                'key': params.get('key'), 'min': params.get('min'),
+                'max': params.get('max'), 'reason': reason,
             })
+        if action == 'set_header_constant':
+            return toolkit.propose_header_constant({
+                'key': params.get('key'), 'value': params.get('value'), 'reason': reason,
+            })
+        if action == 'sort_dataset':
+            return toolkit.propose_sort({'key': params.get('key'), 'reason': reason})
+        if action == 'resample_dataset':
+            return toolkit.propose_resample({'dt': params.get('dt'), 'reason': reason})
         raise ValueError(f'Unsupported proposal action: {action}')
 
     @property
@@ -267,10 +320,7 @@ class SeismicAgent:
 
         rounds = 0
         while rounds < max_tool_rounds:
-            calls = [
-                item for item in response.output
-                if getattr(item, 'type', None) == 'function_call'
-            ]
+            calls = [item for item in response.output if getattr(item, 'type', None) == 'function_call']
             if not calls:
                 break
             rounds += 1
@@ -283,14 +333,11 @@ class SeismicAgent:
                 except Exception as exc:
                     result = {'status': 'error', 'error': str(exc)}
                 tool_trace.append({
-                    'tool': call.name,
-                    'arguments': arguments,
-                    'result': result,
-                    'routed_by': 'openclaw',
+                    'tool': call.name, 'arguments': arguments,
+                    'result': result, 'routed_by': 'openclaw',
                 })
                 outputs.append({
-                    'type': 'function_call_output',
-                    'call_id': call.call_id,
+                    'type': 'function_call_output', 'call_id': call.call_id,
                     'output': json.dumps(result, ensure_ascii=False),
                 })
             response = self.provider.create_response(
@@ -335,19 +382,22 @@ class SeismicAgent:
                 pending = toolkit.pending_action or {}
                 display_name = pending.get('display_name', pending.get('tool', 'processing'))
                 params = pending.get('parameters', {})
+                policy = pending.get('approval_policy', 'always')
                 if proposal_source != 'structured_envelope':
                     text = (
                         f'The application parsed and validated the agent recommendation for '
                         f'**{display_name}** with parameters `{params}`. '
-                        'A pending proposal was created; no processing has executed yet. '
-                        'Approve it in the UI to run the operation.'
+                        'A pending proposal was created; no processing has executed yet.'
                     )
                 else:
                     text = (
                         clean_text
-                        + f'\n\nA validated **{display_name}** proposal was created with '
-                        f'parameters `{params}`. It will not run until you approve it in the UI.'
+                        + f'\n\nA validated **{display_name}** proposal was created with parameters `{params}`.'
                     ).strip()
+                if policy == 'always':
+                    text += ' This operation requires approval in the UI before execution.'
+                else:
+                    text += ' It remains pending until you approve it or explicitly authorize that exact proposal.'
             except Exception as exc:
                 text = (
                     clean_text
@@ -397,10 +447,7 @@ class SeismicAgent:
         tool_trace: list[dict[str, Any]] = []
         rounds = 0
         while rounds < max_tool_rounds:
-            calls = [
-                item for item in response.output
-                if getattr(item, 'type', None) == 'function_call'
-            ]
+            calls = [item for item in response.output if getattr(item, 'type', None) == 'function_call']
             if not calls:
                 break
             rounds += 1
@@ -413,14 +460,11 @@ class SeismicAgent:
                 except Exception as exc:
                     result = {'status': 'error', 'error': str(exc)}
                 tool_trace.append({
-                    'tool': call.name,
-                    'arguments': arguments,
-                    'result': result,
-                    'routed_by': self.provider.name,
+                    'tool': call.name, 'arguments': arguments,
+                    'result': result, 'routed_by': self.provider.name,
                 })
                 outputs.append({
-                    'type': 'function_call_output',
-                    'call_id': call.call_id,
+                    'type': 'function_call_output', 'call_id': call.call_id,
                     'output': json.dumps(result, ensure_ascii=False),
                 })
             response = self.provider.create_response(
@@ -455,7 +499,6 @@ class SeismicAgent:
         *,
         max_traces: int = 200,
     ) -> dict[str, Any]:
-        """Run deterministic filter QC, then ask the configured provider to reflect."""
         qc = toolkit.compare_datasets()
         if qc.get('status') != 'success':
             return {
@@ -480,10 +523,9 @@ class SeismicAgent:
             'bandpass should be PROPOSED for human approval.\n\n'
             'Important constraints:\n'
             '- Do not claim to visually inspect plots; use only the supplied metrics.\n'
-            '- Be conservative. A filter can reduce out-of-band energy while also damaging useful signal.\n'
-            '- If evidence is insufficient or ambiguous, choose ACCEPT rather than inventing an adjustment.\n'
+            '- Be conservative. If evidence is insufficient or ambiguous, choose ACCEPT.\n'
             '- If proposing an adjustment, require 0 <= f1 < f2 < f3 < f4 < Nyquist.\n'
-            '- The adjustment will NOT execute automatically; it only becomes a pending user-approved proposal.\n'
+            '- The adjustment does not execute automatically.\n'
             '- Return JSON only, with exactly this shape:\n'
             '{"decision":"accept|adjust","summary":"short user-facing summary",'
             '"reason":"evidence-based reason","confidence":"low|medium|high",'
@@ -508,19 +550,14 @@ class SeismicAgent:
             return {
                 'status': 'unstructured',
                 'text': raw_text or 'The agent returned no reflection text.',
-                'decision': 'review_only',
-                'reason': str(exc),
-                'confidence': 'low',
-                'pending_action': None,
-                'qc': qc,
-                'after_frequency': after_frequency,
+                'decision': 'review_only', 'reason': str(exc), 'confidence': 'low',
+                'pending_action': None, 'qc': qc, 'after_frequency': after_frequency,
                 'raw_response': raw_text,
             }
 
         decision = str(parsed.get('decision', 'accept')).strip().lower()
         if decision not in {'accept', 'adjust'}:
             decision = 'accept'
-
         summary = str(parsed.get('summary') or 'QC review completed.').strip()
         reason = str(parsed.get('reason') or '').strip()
         confidence = str(parsed.get('confidence') or 'low').strip().lower()
@@ -533,10 +570,8 @@ class SeismicAgent:
             adjusted = parsed.get('adjusted_filter')
             if isinstance(adjusted, dict):
                 proposal_args = {
-                    'f1': adjusted.get('f1'),
-                    'f2': adjusted.get('f2'),
-                    'f3': adjusted.get('f3'),
-                    'f4': adjusted.get('f4'),
+                    'f1': adjusted.get('f1'), 'f2': adjusted.get('f2'),
+                    'f3': adjusted.get('f3'), 'f4': adjusted.get('f4'),
                     'reason': reason or 'QC reflection recommended an adjusted bandpass.',
                 }
                 try:
@@ -545,7 +580,6 @@ class SeismicAgent:
                 except Exception as exc:
                     validation_error = str(exc)
                     decision = 'accept'
-                    pending_action = None
             else:
                 validation_error = 'Agent selected adjust but did not provide adjusted_filter.'
                 decision = 'accept'
@@ -557,29 +591,19 @@ class SeismicAgent:
         if pending_action is not None:
             p = pending_action['parameters']
             text += (
-                '\n\nSuggested follow-up filter (requires approval): '
+                '\n\nSuggested follow-up filter: '
                 f"**{p['f1']:g} - {p['f2']:g} - {p['f3']:g} - {p['f4']:g} Hz**."
             )
         if validation_error:
-            text += (
-                '\n\nThe proposed adjustment failed application validation, so no new processing '
-                f'proposal was created: `{validation_error}`'
-            )
+            text += f'\n\nNo new proposal was created: `{validation_error}`'
 
         return {
-            'status': 'success',
-            'text': text,
-            'decision': decision,
-            'summary': summary,
-            'reason': reason,
-            'confidence': confidence,
-            'pending_action': pending_action,
-            'qc': qc,
-            'after_frequency': after_frequency,
-            'raw_response': raw_text,
+            'status': 'success', 'text': text, 'decision': decision,
+            'summary': summary, 'reason': reason, 'confidence': confidence,
+            'pending_action': pending_action, 'qc': qc,
+            'after_frequency': after_frequency, 'raw_response': raw_text,
             'validation_error': validation_error,
-            'provider': self.provider.name,
-            'model': self.provider.model,
+            'provider': self.provider.name, 'model': self.provider.model,
         }
 
     def run_turn(
@@ -594,14 +618,7 @@ class SeismicAgent:
             self.provider, 'tool_strategy', 'application_routed'
         ) == 'application_routed':
             return self._run_openclaw_application_routed(
-                user_text,
-                toolkit,
-                max_tool_rounds=max_tool_rounds,
-            )
+                user_text, toolkit, max_tool_rounds=max_tool_rounds)
 
         return self._run_native_function_calling(
-            user_text,
-            chat_history,
-            toolkit,
-            max_tool_rounds=max_tool_rounds,
-        )
+            user_text, chat_history, toolkit, max_tool_rounds=max_tool_rounds)

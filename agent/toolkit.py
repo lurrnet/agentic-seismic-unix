@@ -210,6 +210,56 @@ TOOL_SCHEMAS = [
     },
 ]
 
+TOOL_SCHEMAS.extend([
+    {
+        'type': 'function',
+        'name': 'inspect_gathers',
+        'description': 'Inspect CDP or field-record gather structure, fold and offset coverage before prestack processing.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string', 'enum': ['cdp', 'fldr']},
+                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 10000},
+            },
+            'required': ['key', 'max_traces'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'apply_predictive_decon',
+        'description': 'Propose SUPEF predictive error filtering. minlag/maxlag are seconds.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'minlag': {'type': 'number'}, 'maxlag': {'type': 'number'},
+                'pnoise': {'type': 'number'}, 'reason': {'type': 'string'},
+            },
+            'required': ['minlag', 'maxlag', 'pnoise', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'apply_nmo',
+        'description': 'Propose SUNMO using one time-only RMS velocity function. Requires nonzero offset headers.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'tnmo': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 1, 'maxItems': 64},
+                'vnmo': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 1, 'maxItems': 64},
+                'smute': {'type': 'number'}, 'lmute': {'type': 'integer'},
+                'sscale': {'type': 'integer'}, 'reason': {'type': 'string'},
+            },
+            'required': ['tnmo', 'vnmo', 'smute', 'lmute', 'sscale', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+])
+
 
 class AgentToolkit:
     def __init__(self, project, state, history, registry, preview_traces: int = 200):
@@ -230,6 +280,7 @@ class AgentToolkit:
         if name == 'inspect_headers': return self.inspect_headers(arguments)
         if name == 'inspect_geometry': return self.inspect_geometry(arguments)
         if name == 'inspect_amplitude': return self.inspect_amplitude(arguments)
+        if name == 'inspect_gathers': return self.inspect_gathers(arguments)
         if name == 'apply_bandpass_filter': return self.propose_bandpass(arguments)
         if name == 'apply_gain': return self.propose_gain(arguments)
         if name == 'apply_agc': return self.propose_agc(arguments)
@@ -239,6 +290,8 @@ class AgentToolkit:
         if name == 'resample_dataset': return self.propose_resample(arguments)
         if name == 'apply_mute': return self.propose_mute(arguments)
         if name == 'stack_traces': return self.propose_stack(arguments)
+        if name == 'apply_predictive_decon': return self.propose_predictive_decon(arguments)
+        if name == 'apply_nmo': return self.propose_nmo(arguments)
         if name == 'compare_datasets': return self.compare_datasets()
         raise KeyError(f'Unknown agent tool: {name}')
 
@@ -305,6 +358,20 @@ class AgentToolkit:
             'zero_fraction': float(np.mean(flat == 0.0)),
         }
 
+    def inspect_gathers(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        key = str(arguments.get('key', 'cdp')).lower()
+        if key not in ('cdp', 'fldr'):
+            raise ValueError('Gather key must be cdp or fldr.')
+        requested = max(1, min(int(arguments.get('max_traces', 5000)), 10000))
+        m = read_su_metadata(self.current_path)
+        result = summarize_su_headers(self.current_path, m, [key, 'offset'], requested)
+        return {
+            'dataset': str(self.current_path),
+            'gather_key': key,
+            **result,
+            'note': 'unique_count is a bounded gather-count estimate over the inspected traces; inspect more traces for a fuller survey.',
+        }
+
     def _propose_processing(self, *, action_name, registry_tool, parameters, reason, operation):
         spec = self.registry.get(registry_tool)
         if spec.get('approval_level') != 'processing':
@@ -348,6 +415,22 @@ class AgentToolkit:
             action_name='apply_mute', registry_tool='sumute',
             parameters={k: arguments[k] for k in ('key', 'xmute', 'tmute', 'mode', 'ntaper')},
             reason=arguments['reason'], operation='mute')
+
+    def propose_predictive_decon(self, arguments):
+        return self._propose_processing(
+            action_name='apply_predictive_decon', registry_tool='supef',
+            parameters={k: arguments[k] for k in ('minlag', 'maxlag', 'pnoise')},
+            reason=arguments['reason'], operation='decon')
+
+    def propose_nmo(self, arguments):
+        m = read_su_metadata(self.current_path)
+        offset_summary = summarize_su_headers(self.current_path, m, ['offset'], 10000)['headers']['offset']
+        if offset_summary['min'] == 0 and offset_summary['max'] == 0:
+            raise ValueError('SUNMO requires populated offset headers; inspected offsets are all zero.')
+        return self._propose_processing(
+            action_name='apply_nmo', registry_tool='sunmo',
+            parameters={k: arguments[k] for k in ('tnmo', 'vnmo', 'smute', 'lmute', 'sscale')},
+            reason=arguments['reason'], operation='nmo')
 
     def _current_is_sorted_by(self, key: str) -> bool:
         current = str(self.current_path)

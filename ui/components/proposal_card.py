@@ -28,6 +28,16 @@ def _format_parameters(action):
         return f"**Sort:** by `{params['key']}`"
     if tool == 'suresamp':
         return f"**Resample:** `dt={params['dt']:g} s`"
+    if tool == 'sumute':
+        mute_type = 'top/above' if int(params['mode']) == 0 else 'bottom/below'
+        return (
+            f"**Mute:** {mute_type} mute by `{params['key']}`  \n"
+            f"`xmute={params['xmute']}`  \n"
+            f"`tmute={params['tmute']} s`  \n"
+            f"`ntaper={params['ntaper']}`"
+        )
+    if tool == 'sustack':
+        return f"**Stack:** by `{params['key']}` with `normpow={params['normpow']:g}`"
 
     if not params:
         return None

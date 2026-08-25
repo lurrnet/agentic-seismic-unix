@@ -24,7 +24,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.8.7'
+VERSION = '0.9.0'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -67,9 +67,10 @@ def reset_chat_for_project():
     st.session_state.chat_messages = [{
         'role': 'assistant',
         'content': (
-            'Dataset loaded. I can inspect data, frequency, amplitude and geometry; apply filters, '
-            'gain, AGC or mute; select or sort traces; resample data; stack sorted gathers; '
-            'and propose restricted header edits.'
+            'Dataset loaded. I can inspect data, frequency, amplitude, geometry and gathers; '
+            'apply filters, gain, AGC, mute or predictive deconvolution; select or sort traces; '
+            'resample data; apply NMO with a validated time-only velocity function; stack sorted '
+            'gathers; and propose restricted header edits.'
         ),
     }]
     st.session_state.pending_action = None
@@ -165,6 +166,8 @@ def build_explicit_processing_action(command, project, state, history):
     elif action == 'resample_dataset': toolkit.propose_resample({**params, 'reason': reason})
     elif action == 'apply_mute': toolkit.propose_mute({**params, 'reason': reason})
     elif action == 'stack_traces': toolkit.propose_stack({**params, 'reason': reason})
+    elif action == 'apply_predictive_decon': toolkit.propose_predictive_decon({**params, 'reason': reason})
+    elif action == 'apply_nmo': toolkit.propose_nmo({**params, 'reason': reason})
     else: raise ValueError(f'Unsupported explicit processing action: {action}')
     pending = toolkit.pending_action
     if pending is None:
@@ -201,10 +204,11 @@ def is_explicit_followup_confirmation(prompt, action):
     spec = registry.get(action['tool'])
     if spec.get('approval_policy') != 'explicit_or_approval': return False
     text = prompt.strip().lower()
+    operation_terms = 'agc|gain|filter|bandpass|selection|sort|resample|mute|stack|decon|deconvolution|nmo|moveout'
     patterns = (
         r'^(?:yes[, ]*)?(?:go ahead|proceed|do it|run it|execute it|apply it)[.! ]*$',
-        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:that|this|such)(?:\s+(?:agc|gain|filter|bandpass|selection|sort|resample|mute|stack))?[.! ]*$',
-        r'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:the\s+)?(?:recommended|proposed)\s+(?:agc|gain|filter|bandpass|selection|sort|resample|mute|stack)[.! ]*$',
+        rf'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:that|this|such)(?:\s+(?:{operation_terms}))?[.! ]*$',
+        rf'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:the\s+)?(?:recommended|proposed)\s+(?:{operation_terms})[.! ]*$',
     )
     return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 

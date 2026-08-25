@@ -38,15 +38,20 @@ def render_agent_details(
 
     st.subheader('Security Policy')
     limits = get_security_limits()
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.metric('Max Upload', _human_bytes(limits['max_upload_bytes']))
         st.metric('Max Processing Steps', limits['max_processing_steps'])
     with c2:
         st.metric('Max Project Storage', _human_bytes(limits['max_project_bytes']))
+        st.metric('Free-space Reserve', _human_bytes(limits['min_free_bytes']))
+    with c3:
         st.metric('SU Timeout', f"{limits['su_timeout_seconds']} s")
+        st.metric('Import Timeout', f"{limits['import_timeout_seconds']} s")
     st.caption(
-        'SU execution is single-job, shell-free, timeout-bounded, and validated through the application registry.'
+        f"Heavy seismic jobs are single-concurrency; agent requests are limited to "
+        f"{limits['agent_requests_per_minute']}/minute per project. Processing and import are "
+        'shell-free, timeout-bounded, path-contained, storage-guarded, and application-validated.'
     )
 
     trace = st.session_state.get('last_tool_trace') or []

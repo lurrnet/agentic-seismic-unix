@@ -1,0 +1,46 @@
+name: sunmo
+display_name: Apply NMO
+description: Apply normal moveout using one time-only RMS velocity function. Requires valid offset headers.
+category: moveout
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: explicit_or_approval
+parameters:
+  tnmo:
+    type: float_list
+    required: true
+    min_items: 1
+    max_items: 64
+  vnmo:
+    type: float_list
+    required: true
+    min_items: 1
+    max_items: 64
+  smute:
+    type: float
+    default: 1.5
+    minimum: 1.0
+    maximum: 20.0
+  lmute:
+    type: int
+    default: 25
+    minimum: 0
+    maximum: 1000
+  sscale:
+    type: int
+    default: 1
+    choices: [0, 1]
+validation:
+  same_length: [tnmo, vnmo]
+  ordered_list: tnmo
+  time_list_within_trace: tnmo
+  positive_list: vnmo
+execution:
+  executable: sunmo
+  argument_template:
+    - "tnmo={tnmo}"
+    - "vnmo={vnmo}"
+    - "smute={smute}"
+    - "lmute={lmute}"
+    - "sscale={sscale}"

@@ -23,25 +23,6 @@ def render_agent_panel(
                 else:
                     st.warning(agent_error or 'Agent is not configured.')
 
-                if dataset_loaded and (
-                    st.session_state.get('last_tool_trace')
-                    or st.session_state.get('last_reflection')
-                ):
-                    with st.expander('Agent details'):
-                        if st.session_state.get('last_tool_trace'):
-                            st.caption('Last tool trace')
-                            st.json(st.session_state.last_tool_trace)
-                        if st.session_state.get('last_reflection'):
-                            r = st.session_state.last_reflection
-                            st.caption('Latest reflection')
-                            st.markdown(
-                                f"**Decision:** {str(r.get('decision', 'review_only')).upper()}"
-                            )
-                            if r.get('confidence'):
-                                st.caption(f"Confidence: {r.get('confidence')}")
-                            if r.get('error'):
-                                st.error(r['error'])
-
             with st.container(key='agent_history', border=False):
                 if not dataset_loaded:
                     with st.chat_message('assistant'):

@@ -1,0 +1,17 @@
+name: susort
+display_name: Sort Dataset
+description: Sort SU traces by one whitelisted header key using susort.
+category: organization
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: explicit_or_approval
+parameters:
+  key:
+    type: string
+    required: true
+    choices: [tracl, tracr, fldr, tracf, ep, cdp, cdpt, offset, sx, sy, gx, gy]
+execution:
+  executable: susort
+  argument_template:
+    - "{key}"

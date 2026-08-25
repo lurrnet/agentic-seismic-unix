@@ -6,7 +6,7 @@ WORKSTATION_CSS = r"""
 /* Base page spacing. */
 div[data-testid="stMainBlockContainer"],
 .block-container {
-    padding-top: 0.9rem !important;
+    padding-top: 1.15rem !important;
 }
 
 /*
@@ -16,17 +16,16 @@ This keeps the left panel border and right-column content on the same top line.
 div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
     align-items: flex-start !important;
     overflow: visible !important;
-    padding-top: 1.35rem !important;
+    padding-top: 1.6rem !important;
 }
 
-/* Do not add a second, right-only offset on the initial load screen. */
 .st-key-initial_load_panel {
     padding-top: 0 !important;
 }
 
 div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     position: sticky !important;
-    top: 2.25rem !important;
+    top: 2.75rem !important;
     align-self: flex-start !important;
     overflow: visible !important;
     z-index: 20;
@@ -43,7 +42,7 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 
 .st-key-agent_panel {
     position: relative;
-    height: calc(100vh - 3.15rem);
+    height: calc(100vh - 3.9rem);
     min-height: 680px;
     width: 100%;
     max-width: 100%;
@@ -169,9 +168,17 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     margin-bottom: 0.15rem !important;
 }
 
+.st-key-dataset_lineage [data-testid="stHorizontalBlock"] {
+    align-items: center !important;
+}
+
+.st-key-dataset_lineage p {
+    margin-bottom: 0 !important;
+}
+
 @media (max-width: 1000px) {
     div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
-        padding-top: 1rem !important;
+        padding-top: 1.2rem !important;
     }
 
     div[data-testid="stColumn"]:has(.st-key-agent_panel) {

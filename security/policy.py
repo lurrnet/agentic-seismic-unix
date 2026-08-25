@@ -54,16 +54,17 @@ def enforce_upload_limit(upload_size: int) -> None:
         )
 
 
-def enforce_processing_limits(project, state) -> None:
+def enforce_processing_limits(project, state, expected_output_bytes: int = 0) -> None:
     limits = get_security_limits()
     if int(state.current_step) >= limits['max_processing_steps']:
         raise SecurityLimitError(
             f'Project has reached the maximum of {limits["max_processing_steps"]} processing steps.'
         )
     used = directory_size_bytes(Path(project.root))
-    if used >= limits['max_project_bytes']:
+    projected = used + max(0, int(expected_output_bytes))
+    if projected > limits['max_project_bytes']:
         raise SecurityLimitError(
-            f'Project storage {used} bytes has reached configured limit '
+            f'Projected project storage {projected} bytes exceeds configured limit '
             f'{limits["max_project_bytes"]} bytes.'
         )
 
@@ -83,5 +84,4 @@ def audit_event(project, event: str, *, severity: str = 'info', details: dict[st
         with path.open('a', encoding='utf-8') as fout:
             fout.write(json.dumps(record, ensure_ascii=False, separators=(',', ':')) + '\n')
     except Exception:
-        # Security telemetry must never crash deterministic processing paths.
         pass

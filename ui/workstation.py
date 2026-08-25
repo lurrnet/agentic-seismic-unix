@@ -9,6 +9,11 @@ div[data-testid="stMainBlockContainer"],
     padding-top: 0.9rem !important;
 }
 
+/* Give only the pre-load main panel extra clearance from the Streamlit toolbar. */
+.st-key-initial_load_panel {
+    padding-top: 1.35rem !important;
+}
+
 /* Sticky dual-panel workstation. */
 div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
     align-items: flex-start !important;
@@ -65,7 +70,8 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 }
 
 .st-key-agent_header h3 {
-    margin-bottom: 0.15rem !important;
+    margin-top: 0 !important;
+    margin-bottom: 0.2rem !important;
 }
 
 .st-key-agent_header [data-testid="stCaptionContainer"] {
@@ -87,7 +93,7 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     overscroll-behavior: contain;
     border-top: 1px solid rgba(128, 128, 128, 0.16);
     border-bottom: 1px solid rgba(128, 128, 128, 0.16);
-    padding: 0.45rem 0.35rem 0.8rem 0.2rem;
+    padding: 0.55rem 0.35rem 0.8rem 0.2rem;
 }
 
 .st-key-agent_history [data-testid="stChatMessage"],

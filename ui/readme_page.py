@@ -9,67 +9,67 @@ Agentic SeismicUnix is an AI-assisted seismic-processing workstation built aroun
 ## Typical workflow
 
 1. Upload a SEG-Y file. The application converts it to SU and creates a project workspace.
-2. Ask the agent to inspect the dataset, frequency content, headers, or amplitudes.
+2. Ask the agent to inspect the dataset, frequency content, amplitudes, headers, or acquisition geometry.
 3. Ask for a processing recommendation, or give a fully specified processing command directly.
 4. Review processing results in Workspace, QC, and History.
-5. Continue processing from the latest dataset. Every successful operation creates a new SU step and is recorded in project history.
+5. Continue from the latest dataset. Every successful operation creates a new SU step and refreshes metadata such as `ns`, `dt`, and Nyquist.
 
-## Current tools
+## Inspection tools
 
-### Inspection tools
+Read-only tools may run automatically.
 
-These tools are read-only and may run automatically because they do not modify seismic data.
-
-- **inspect_dataset** — sampling interval, samples per trace, estimated trace count, file size, endian information, and an SU header-range overview.
-- **inspect_frequency** — bounded spectral analysis of preview traces and Nyquist information.
-- **inspect_headers** — summaries of common SU trace headers such as `fldr`, `tracf`, `cdp`, `offset`, `sx`, and `gx`.
-- **inspect_amplitude** — amplitude minimum/maximum, mean, RMS, percentiles, and zero-sample fraction.
+- **inspect_dataset** — sampling interval, samples per trace, trace count, file size, endian information, and SU range information.
+- **inspect_frequency** — bounded spectral analysis and Nyquist information.
+- **inspect_headers** — summaries of selected SU trace headers.
+- **inspect_geometry** — acquisition/geometry summary for `fldr`, `tracf`, `cdp`, `cdpt`, `offset`, `sx/sy`, `gx/gy`, and `scalco`.
+- **inspect_amplitude** — amplitude min/max, mean, RMS, percentiles, and zero-sample fraction.
 - **compare_datasets** — deterministic before/after QC for the latest bandpass-filter step.
 
-### Processing tools
+## Processing tools
 
-Processing tools create a new SU dataset and are validated before execution.
-
-- **Bandpass Filter (`sufilter`)** — four-corner zero-phase bandpass with `f1`, `f2`, `f3`, and `f4`.
+- **Bandpass Filter (`sufilter`)** — four-corner zero-phase bandpass using `f1/f2/f3/f4`.
 - **Gain (`sugain`)** — deterministic gain using `tpow`, `gpow`, and `qclip`.
-- **AGC (`sugain agc=1`)** — automatic gain control using a `wagc` window in seconds.
-- **Trace Selection (`suwind`)** — select traces by a validated SU header key and min/max limits.
+- **AGC (`sugain agc=1`)** — automatic gain control using `wagc` in seconds.
+- **Trace Selection (`suwind`)** — select traces by header key and min/max limits.
+- **Sort Dataset (`susort`)** — sort traces by one whitelisted SU header key.
+- **Resample Dataset (`suresamp`)** — change the sample interval using `dt` in seconds. The application refreshes metadata after execution.
+- **Set Header Constant (`sushw`)** — set one whitelisted header key to a constant integer for all traces. This is intentionally restricted and always approval-gated.
 
 ## Approval behavior
 
-The application distinguishes between a recommendation and an explicit user command.
+The application distinguishes between recommendations, explicit commands, and higher-risk metadata edits.
 
-- `Recommend an AGC window.` → the agent chooses parameters and the operation remains approval-gated.
-- `Apply AGC.` → the agent may recommend parameters; approval is still required because the user did not specify the exact window.
-- `Apply AGC with a 0.5 s window.` → the application can validate and execute directly because the action and complete parameters were explicitly supplied by the user.
-- After the agent creates a pending proposal, follow-up commands such as `apply it`, `go ahead`, or `apply such an AGC` authorize that exact validated proposal and execute it directly.
+- `Recommend an AGC window.` → agent chooses parameters; proposal remains pending.
+- `Apply AGC with a 0.5 s window.` → exact user command; may execute directly after validation.
+- `Sort the dataset by cdp.` → exact user command; may execute directly after validation.
+- `Resample to 2 ms.` → exact user command; may execute directly after validation.
+- `Set cdp header to 100.` → header rewrite; **always requires UI approval** even though the value is explicit.
+- After a normal pending proposal, `apply it`, `go ahead`, or similar wording authorizes that exact proposal only when its tool policy allows explicit execution.
 
-Read-only inspection never requires approval. Future higher-risk tools such as geometry or header rewriting can be configured to always require approval.
+## Geometry notes
+
+SU coordinate headers such as `sx`, `sy`, `gx`, and `gy` are stored as raw integer header values. Their physical interpretation depends on `scalco`: positive values multiply coordinates, negative values divide by the absolute value, and zero is treated as a scale of 1. Geometry/header edits should therefore be inspected before modification.
 
 ## Example requests
 
-### Inspect the data
+### Inspection
 
 - `Inspect this dataset.`
 - `What is the frequency content?`
+- `Inspect the acquisition geometry.`
 - `Inspect CDP and offset ranges.`
 - `Show me the amplitude statistics.`
 
-### Bandpass filtering
+### Processing
 
 - `Recommend a reasonable bandpass filter.`
 - `Apply a bandpass of 8-15-50-60 Hz.`
-
-### Gain and AGC
-
-- `Recommend a conservative gain.`
 - `Recommend an AGC window.`
 - `Apply AGC with a 0.5 s window.`
-
-### Trace selection
-
-- `Inspect the offset range.`
 - `Select traces with offset between -2000 and 2000.`
+- `Sort the dataset by cdp.`
+- `Resample to 2 ms.`
+- `Set cdp header to 100.`
 
 ## Main tabs
 
@@ -77,12 +77,12 @@ Read-only inspection never requires approval. Future higher-risk tools such as g
 - **Processing** — manual processing controls and related processing views.
 - **QC** — before/after seismic, spectrum, quantitative QC metrics, and agent reflection for filters.
 - **History** — provenance and processing-step history.
-- **Agent Details** — configured provider/model, latest tool trace, latest reflection, and any pending processing action.
+- **Agent Details** — provider/model, latest tool trace, latest reflection, and pending action.
 - **Readme** — this help page.
 
 ## Safety model
 
-The agent does not receive unrestricted shell access. It works through structured application tools. Tool parameters are validated, processing writes a new output dataset instead of silently overwriting the current one, and project history records the processing lineage.
+The agent never receives unrestricted shell access. It works through structured application capabilities backed by validated SU commands. Processing writes new output datasets rather than silently overwriting the current file. Header rewriting is intentionally narrower than raw `sushw`, and project history records the processing lineage.
 '''
 
 

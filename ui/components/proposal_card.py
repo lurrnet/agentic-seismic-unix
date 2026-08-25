@@ -32,28 +32,29 @@ def render_proposal_card(action):
     if not action:
         return None
 
-    st.markdown('### Pending Approval')
-    st.caption(action.get('display_name') or action.get('tool', 'Processing'))
+    with st.container(key='proposal_card', border=False):
+        st.markdown('### Pending Approval')
+        st.caption(action.get('display_name') or action.get('tool', 'Processing'))
 
-    summary = _format_parameters(action)
-    if summary:
-        st.markdown(summary)
+        summary = _format_parameters(action)
+        if summary:
+            st.markdown(summary)
 
-    reason = action.get('reason')
-    if reason:
-        st.caption(reason)
+        reason = action.get('reason')
+        if reason:
+            st.caption(reason)
 
-    action_key = str(action.get('action') or action.get('tool') or 'processing')
-    a, b = st.columns(2)
-    approve = a.button(
-        'Approve',
-        type='primary',
-        use_container_width=True,
-        key=f'approve_{action_key}',
-    )
-    reject = b.button(
-        'Reject',
-        use_container_width=True,
-        key=f'reject_{action_key}',
-    )
+        action_key = str(action.get('action') or action.get('tool') or 'processing')
+        a, b = st.columns(2)
+        approve = a.button(
+            'Approve',
+            type='primary',
+            use_container_width=True,
+            key=f'approve_{action_key}',
+        )
+        reject = b.button(
+            'Reject',
+            use_container_width=True,
+            key=f'reject_{action_key}',
+        )
     return 'approve' if approve else ('reject' if reject else None)

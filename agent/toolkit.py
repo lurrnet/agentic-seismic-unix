@@ -30,9 +30,7 @@ TOOL_SCHEMAS = [
         'description': 'Inspect mean amplitude-spectrum characteristics of the current SU dataset using preview traces.',
         'parameters': {
             'type': 'object',
-            'properties': {
-                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 1000}
-            },
+            'properties': {'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 1000}},
             'required': ['max_traces'],
             'additionalProperties': False,
         },
@@ -45,12 +43,7 @@ TOOL_SCHEMAS = [
         'parameters': {
             'type': 'object',
             'properties': {
-                'keys': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
-                    'minItems': 1,
-                    'maxItems': 12,
-                },
+                'keys': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 12},
                 'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 10000},
             },
             'required': ['keys', 'max_traces'],
@@ -64,9 +57,7 @@ TOOL_SCHEMAS = [
         'description': 'Inspect common acquisition/geometry headers including field record, CDP, offset, coordinates and scalco.',
         'parameters': {
             'type': 'object',
-            'properties': {
-                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 10000}
-            },
+            'properties': {'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 10000}},
             'required': ['max_traces'],
             'additionalProperties': False,
         },
@@ -78,9 +69,7 @@ TOOL_SCHEMAS = [
         'description': 'Compute bounded amplitude statistics from current SU preview traces.',
         'parameters': {
             'type': 'object',
-            'properties': {
-                'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 1000}
-            },
+            'properties': {'max_traces': {'type': 'integer', 'minimum': 1, 'maximum': 1000}},
             'required': ['max_traces'],
             'additionalProperties': False,
         },
@@ -94,8 +83,7 @@ TOOL_SCHEMAS = [
             'type': 'object',
             'properties': {
                 'f1': {'type': 'number'}, 'f2': {'type': 'number'},
-                'f3': {'type': 'number'}, 'f4': {'type': 'number'},
-                'reason': {'type': 'string'},
+                'f3': {'type': 'number'}, 'f4': {'type': 'number'}, 'reason': {'type': 'string'},
             },
             'required': ['f1', 'f2', 'f3', 'f4', 'reason'],
             'additionalProperties': False,
@@ -150,10 +138,7 @@ TOOL_SCHEMAS = [
         'description': 'Propose setting one whitelisted SU header key to a constant integer for every trace. Always requires UI approval.',
         'parameters': {
             'type': 'object',
-            'properties': {
-                'key': {'type': 'string'}, 'value': {'type': 'integer'},
-                'reason': {'type': 'string'},
-            },
+            'properties': {'key': {'type': 'string'}, 'value': {'type': 'integer'}, 'reason': {'type': 'string'}},
             'required': ['key', 'value', 'reason'],
             'additionalProperties': False,
         },
@@ -179,6 +164,39 @@ TOOL_SCHEMAS = [
             'type': 'object',
             'properties': {'dt': {'type': 'number'}, 'reason': {'type': 'string'}},
             'required': ['dt', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'apply_mute',
+        'description': 'Propose a bounded top or bottom polygonal mute using key, xmute points, tmute seconds, mode, and ntaper.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string'},
+                'xmute': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 2, 'maxItems': 32},
+                'tmute': {'type': 'array', 'items': {'type': 'number'}, 'minItems': 2, 'maxItems': 32},
+                'mode': {'type': 'integer'},
+                'ntaper': {'type': 'integer'},
+                'reason': {'type': 'string'},
+            },
+            'required': ['key', 'xmute', 'tmute', 'mode', 'ntaper', 'reason'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+    },
+    {
+        'type': 'function',
+        'name': 'stack_traces',
+        'description': 'Propose stacking adjacent traces sharing a gather key. Current dataset must be the direct output of sorting by the same key.',
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string'}, 'normpow': {'type': 'number'}, 'reason': {'type': 'string'},
+            },
+            'required': ['key', 'normpow', 'reason'],
             'additionalProperties': False,
         },
         'strict': True,
@@ -219,6 +237,8 @@ class AgentToolkit:
         if name == 'set_header_constant': return self.propose_header_constant(arguments)
         if name == 'sort_dataset': return self.propose_sort(arguments)
         if name == 'resample_dataset': return self.propose_resample(arguments)
+        if name == 'apply_mute': return self.propose_mute(arguments)
+        if name == 'stack_traces': return self.propose_stack(arguments)
         if name == 'compare_datasets': return self.compare_datasets()
         raise KeyError(f'Unknown agent tool: {name}')
 
@@ -244,12 +264,7 @@ class AgentToolkit:
         m = read_su_metadata(self.current_path)
         traces = load_preview_traces(self.current_path, m, requested)
         summary = summarize_frequency_content(traces, m.dt_s)
-        return {
-            'dataset': str(self.current_path),
-            'traces_analyzed': int(traces.shape[0]),
-            'nyquist_hz': m.nyquist_hz,
-            **summary,
-        }
+        return {'dataset': str(self.current_path), 'traces_analyzed': int(traces.shape[0]), 'nyquist_hz': m.nyquist_hz, **summary}
 
     def inspect_headers(self, arguments: dict[str, Any]) -> dict[str, Any]:
         keys = arguments.get('keys') or ['fldr', 'tracf', 'cdp', 'offset', 'sx', 'gx']
@@ -282,9 +297,7 @@ class AgentToolkit:
             'dataset': str(self.current_path),
             'traces_analyzed': int(traces.shape[0]),
             'samples_analyzed': int(flat.size),
-            'min': float(np.min(flat)),
-            'max': float(np.max(flat)),
-            'mean': float(np.mean(flat)),
+            'min': float(np.min(flat)), 'max': float(np.max(flat)), 'mean': float(np.mean(flat)),
             'rms': float(np.sqrt(np.mean(flat * flat))),
             'p50_abs': float(np.percentile(abs_flat, 50)),
             'p95_abs': float(np.percentile(abs_flat, 95)),
@@ -298,64 +311,67 @@ class AgentToolkit:
             raise ValueError(f'{registry_tool} is not configured as processing.')
         params = validate_parameters(spec, parameters, context=self.state.metadata)
         pending = {
-            'type': 'processing',
-            'action': action_name,
-            'tool': registry_tool,
-            'operation': operation,
-            'display_name': spec.get('display_name', registry_tool),
+            'type': 'processing', 'action': action_name, 'tool': registry_tool,
+            'operation': operation, 'display_name': spec.get('display_name', registry_tool),
             'category': spec.get('category', 'processing'),
             'approval_level': spec.get('approval_level', 'processing'),
             'approval_policy': spec.get('approval_policy', 'always'),
-            'input': str(self.current_path),
-            'parameters': params,
-            'reason': str(reason).strip(),
-            'status': 'pending_approval',
+            'input': str(self.current_path), 'parameters': params,
+            'reason': str(reason).strip(), 'status': 'pending_approval',
         }
         self.pending_action = pending
-        return {
-            'status': 'pending_approval',
-            'message': f"{pending['display_name']} proposal created.",
-            'proposal': pending,
-        }
+        return {'status': 'pending_approval', 'message': f"{pending['display_name']} proposal created.", 'proposal': pending}
 
     def propose_bandpass(self, arguments):
-        return self._propose_processing(
-            action_name='apply_bandpass_filter', registry_tool='sufilter',
-            parameters={k: arguments[k] for k in ('f1', 'f2', 'f3', 'f4')},
-            reason=arguments['reason'], operation='filter')
+        return self._propose_processing(action_name='apply_bandpass_filter', registry_tool='sufilter', parameters={k: arguments[k] for k in ('f1', 'f2', 'f3', 'f4')}, reason=arguments['reason'], operation='filter')
 
     def propose_gain(self, arguments):
-        return self._propose_processing(
-            action_name='apply_gain', registry_tool='sugain',
-            parameters={k: arguments[k] for k in ('tpow', 'gpow', 'qclip')},
-            reason=arguments['reason'], operation='gain')
+        return self._propose_processing(action_name='apply_gain', registry_tool='sugain', parameters={k: arguments[k] for k in ('tpow', 'gpow', 'qclip')}, reason=arguments['reason'], operation='gain')
 
     def propose_agc(self, arguments):
-        return self._propose_processing(
-            action_name='apply_agc', registry_tool='suagc',
-            parameters={'wagc': arguments['wagc']}, reason=arguments['reason'], operation='agc')
+        return self._propose_processing(action_name='apply_agc', registry_tool='suagc', parameters={'wagc': arguments['wagc']}, reason=arguments['reason'], operation='agc')
 
     def propose_trace_selection(self, arguments):
-        return self._propose_processing(
-            action_name='select_traces', registry_tool='suwind',
-            parameters={k: arguments[k] for k in ('key', 'min', 'max')},
-            reason=arguments['reason'], operation='select')
+        return self._propose_processing(action_name='select_traces', registry_tool='suwind', parameters={k: arguments[k] for k in ('key', 'min', 'max')}, reason=arguments['reason'], operation='select')
 
     def propose_header_constant(self, arguments):
-        return self._propose_processing(
-            action_name='set_header_constant', registry_tool='sushw_constant',
-            parameters={'key': arguments['key'], 'value': arguments['value']},
-            reason=arguments['reason'], operation='header')
+        return self._propose_processing(action_name='set_header_constant', registry_tool='sushw_constant', parameters={'key': arguments['key'], 'value': arguments['value']}, reason=arguments['reason'], operation='header')
 
     def propose_sort(self, arguments):
-        return self._propose_processing(
-            action_name='sort_dataset', registry_tool='susort',
-            parameters={'key': arguments['key']}, reason=arguments['reason'], operation='sort')
+        return self._propose_processing(action_name='sort_dataset', registry_tool='susort', parameters={'key': arguments['key']}, reason=arguments['reason'], operation='sort')
 
     def propose_resample(self, arguments):
+        return self._propose_processing(action_name='resample_dataset', registry_tool='suresamp', parameters={'dt': arguments['dt']}, reason=arguments['reason'], operation='resample')
+
+    def propose_mute(self, arguments):
         return self._propose_processing(
-            action_name='resample_dataset', registry_tool='suresamp',
-            parameters={'dt': arguments['dt']}, reason=arguments['reason'], operation='resample')
+            action_name='apply_mute', registry_tool='sumute',
+            parameters={k: arguments[k] for k in ('key', 'xmute', 'tmute', 'mode', 'ntaper')},
+            reason=arguments['reason'], operation='mute')
+
+    def _current_is_sorted_by(self, key: str) -> bool:
+        current = str(self.current_path)
+        successful = [r for r in self.history.list() if r.get('status') == 'success']
+        if not successful:
+            return False
+        latest = successful[-1]
+        return (
+            latest.get('tool') == 'susort'
+            and str(latest.get('output')) == current
+            and str((latest.get('parameters') or {}).get('key')) == str(key)
+        )
+
+    def propose_stack(self, arguments):
+        key = str(arguments['key'])
+        if not self._current_is_sorted_by(key):
+            raise ValueError(
+                f'Current dataset is not the direct output of susort key={key}. '
+                f'Sort by {key} immediately before stacking.'
+            )
+        return self._propose_processing(
+            action_name='stack_traces', registry_tool='sustack',
+            parameters={'key': key, 'normpow': arguments['normpow']},
+            reason=arguments['reason'], operation='stack')
 
     def compare_datasets(self) -> dict[str, Any]:
         filters = [r for r in self.history.list() if r.get('tool') == 'sufilter' and r.get('status') == 'success']
@@ -369,15 +385,9 @@ class AgentToolkit:
         before = load_preview_traces(before_path, bm, self.preview_traces)
         after = load_preview_traces(after_path, am, self.preview_traces)
         p = latest['parameters']
-        qc = compare_filter_result(
-            before, after, bm.dt_s,
-            float(p['f2']), float(p['f3']), float(p['f4']))
+        qc = compare_filter_result(before, after, bm.dt_s, float(p['f2']), float(p['f3']), float(p['f4']))
         return {
-            'status': 'success',
-            'step_id': latest['step_id'],
-            'input': str(before_path),
-            'output': str(after_path),
-            'parameters': p,
-            'traces_compared': int(min(before.shape[0], after.shape[0])),
-            **qc,
+            'status': 'success', 'step_id': latest['step_id'],
+            'input': str(before_path), 'output': str(after_path), 'parameters': p,
+            'traces_compared': int(min(before.shape[0], after.shape[0])), **qc,
         }

@@ -1,0 +1,44 @@
+name: sumute
+display_name: Apply Mute
+description: Apply a bounded top or bottom polygonal mute using one validated SU header key.
+category: mute
+input_type: su
+output_type: su
+approval_level: processing
+approval_policy: explicit_or_approval
+parameters:
+  key:
+    type: string
+    required: true
+    choices: [tracl, tracr, fldr, cdp, offset]
+  xmute:
+    type: float_list
+    required: true
+    min_items: 2
+    max_items: 32
+  tmute:
+    type: float_list
+    required: true
+    min_items: 2
+    max_items: 32
+  mode:
+    type: int
+    required: true
+    choices: [0, 1]
+  ntaper:
+    type: int
+    default: 0
+    minimum: 0
+    maximum: 1000
+validation:
+  same_length: [xmute, tmute]
+  ordered_list: xmute
+  time_list_within_trace: tmute
+execution:
+  executable: sumute
+  argument_template:
+    - "key={key}"
+    - "xmute={xmute}"
+    - "tmute={tmute}"
+    - "mode={mode}"
+    - "ntaper={ntaper}"

@@ -16,7 +16,7 @@ TOOL_LABELS = {
 }
 
 
-def _dataset_steps(history):
+def dataset_steps(history):
     rows = []
     for rec in history.list():
         if rec.get('status') != 'success' or not rec.get('output'):
@@ -27,17 +27,20 @@ def _dataset_steps(history):
         rows.append({
             'step_id': int(step_id),
             'tool': rec.get('tool', 'step'),
+            'input': str(rec.get('input')) if rec.get('input') else None,
             'output': str(rec.get('output')),
+            'parameters': rec.get('parameters') or {},
+            'record': rec,
         })
     rows.sort(key=lambda item: item['step_id'])
     return rows
 
 
 def render_dataset_lineage(state, history):
-    """Render all successful dataset-producing steps as compact pills above tabs."""
-    steps = _dataset_steps(history)
+    """Render lineage pills and return the selected dataset-producing step."""
+    steps = dataset_steps(history)
     if not steps:
-        return
+        return None
 
     with st.container(key='dataset_lineage', border=False):
         st.caption('Datasets')
@@ -51,6 +54,9 @@ def render_dataset_lineage(state, history):
             if item['step_id'] == int(state.current_step):
                 current_label = label
 
+        if st.session_state.get('dataset_lineage_pills') not in labels:
+            st.session_state.pop('dataset_lineage_pills', None)
+
         selected = st.pills(
             'Dataset lineage',
             labels,
@@ -62,6 +68,9 @@ def render_dataset_lineage(state, history):
 
         item = details.get(selected or current_label)
         if item:
-            is_current = item['step_id'] == int(state.current_step)
-            prefix = 'Current' if is_current else 'Step'
-            st.caption(f"{prefix} {item['step_id']}: `{Path(item['output']).name}`")
+            is_active = item['step_id'] == int(state.current_step)
+            prefix = 'Active' if is_active else 'Viewing'
+            st.caption(f"{prefix} step {item['step_id']}: `{Path(item['output']).name}`")
+            return item
+
+    return None

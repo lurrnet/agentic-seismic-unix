@@ -1,9 +1,11 @@
 from pathlib import Path
 import re
 import shutil
+import uuid
 import streamlit as st
 
 from agent.seismic_agent import SeismicAgent, AgentConfigurationError
+from agent.knowledge_mode import run_knowledge_turn
 from agent.provider_factory import load_agent_config
 from agent.toolkit import AgentToolkit
 from agent.proposal_fallback import parse_explicit_user_command
@@ -31,7 +33,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.3'
+VERSION = '0.9.4'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -103,15 +105,24 @@ def create_project(uploaded):
 
 
 def reset_chat_for_project():
-    st.session_state.chat_messages = [{
-        'role': 'assistant',
-        'content': (
-            'Dataset loaded. I can inspect data, frequency, amplitude, geometry and gathers; '
-            'apply filters, gain, AGC, mute or predictive deconvolution; select or sort traces; '
-            'resample data; apply NMO with a validated time-only velocity function; stack sorted '
-            'gathers; and propose restricted header edits.'
-        ),
-    }]
+    messages = st.session_state.get('chat_messages') or []
+    transition = (
+        'SEG-Y dataset loaded. **Project Mode** is now active. I can inspect this dataset and '
+        'create validated processing proposals in addition to answering SU knowledge questions.'
+    )
+    if messages:
+        messages.append({'role': 'assistant', 'content': transition})
+        st.session_state.chat_messages = messages[-50:]
+    else:
+        st.session_state.chat_messages = [{
+            'role': 'assistant',
+            'content': (
+                'Dataset loaded. I can inspect data, frequency, amplitude, geometry and gathers; '
+                'apply filters, gain, AGC, mute or predictive deconvolution; select or sort traces; '
+                'resample data; apply NMO with a validated time-only velocity function; stack sorted '
+                'gathers; and propose restricted header edits.'
+            ),
+        }]
     st.session_state.pending_action = None
     st.session_state.pending_user_prompt = None
     st.session_state.last_tool_trace = []
@@ -200,15 +211,32 @@ def run_reflection_after_filter(project, history, registry, out):
         )
 
 
-def run_agent_turn(prompt, project, state, history):
-    enforce_agent_rate_limit(f'project:{project.project_id}')
-    prior_history = list(st.session_state.chat_messages)
+def _prior_chat_for_prompt(prompt):
+    prior_history = list(st.session_state.get('chat_messages', []))
     if (
         prior_history
         and prior_history[-1].get('role') == 'user'
         and prior_history[-1].get('content') == prompt
     ):
         prior_history = prior_history[:-1]
+    return prior_history
+
+
+def run_knowledge_mode_turn(prompt):
+    session_id = st.session_state.setdefault('knowledge_session_id', uuid.uuid4().hex)
+    enforce_agent_rate_limit(f'knowledge:{session_id}')
+    result = run_knowledge_turn(prompt, _prior_chat_for_prompt(prompt))
+    st.session_state.chat_messages.append(
+        {'role': 'assistant', 'content': result['text']}
+    )
+    st.session_state.last_tool_trace = []
+    st.session_state.pending_action = None
+    return result
+
+
+def run_agent_turn(prompt, project, state, history):
+    enforce_agent_rate_limit(f'project:{project.project_id}')
+    prior_history = _prior_chat_for_prompt(prompt)
     toolkit = AgentToolkit(project, state, history, registry, preview_traces=200)
     agent = SeismicAgent()
     result = agent.run_turn(prompt, prior_history, toolkit)
@@ -301,47 +329,6 @@ def is_explicit_followup_confirmation(prompt, action):
     return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 
 
-if 'project_id' not in st.session_state:
-    agent_col, workspace_col = workstation_columns()
-    with agent_col:
-        render_agent_panel(
-            provider_info=None,
-            agent_ready=False,
-            dataset_loaded=False,
-            version=VERSION,
-        )
-    with workspace_col:
-        with st.container(key='initial_load_panel', border=False):
-            st.subheader('Load Data')
-            uploaded = st.file_uploader(
-                'Upload a SEG-Y file',
-                type=['sgy', 'segy'],
-                help='SEG-Y is converted to SU inside the project workspace.',
-            )
-            if uploaded is None:
-                st.info(
-                    'Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.'
-                )
-                st.stop()
-            signature = f'{uploaded.name}:{uploaded.size}'
-            try:
-                with st.spinner('Creating project and converting SEG-Y to SU...'):
-                    project, state = create_project(uploaded)
-                st.session_state.upload_signature = signature
-                st.session_state.project_id = project.project_id
-                reset_chat_for_project()
-                st.rerun()
-            except Exception as exc:
-                st.error('Failed to initialize the project.')
-                st.code(str(exc))
-                st.stop()
-
-project = Project(DATA_ROOT, st.session_state.project_id)
-state = project.load_state()
-history = HistoryStore(project.history_dir / 'workflow.json')
-engine = WorkflowEngine(executor, history)
-current = project.path(state.current_dataset)
-metadata = read_su_metadata(current)
 for key, default in [
     ('chat_messages', []),
     ('pending_action', None),
@@ -363,6 +350,83 @@ except AgentConfigurationError as exc:
 except Exception as exc:
     agent_ready = False
     agent_error = str(exc)
+
+
+if 'project_id' not in st.session_state:
+    agent_col, workspace_col = workstation_columns()
+    with agent_col:
+        prompt, _ = render_agent_panel(
+            provider_info=provider_info,
+            agent_ready=agent_ready,
+            agent_error=agent_error,
+            dataset_loaded=False,
+            version=VERSION,
+        )
+
+    with workspace_col:
+        with st.container(key='initial_load_panel', border=False):
+            st.subheader('Load Data')
+            st.caption(
+                'Knowledge Mode is available now. Upload SEG-Y when you want dataset inspection '
+                'and processing.'
+            )
+            uploaded = st.file_uploader(
+                'Upload a SEG-Y file',
+                type=['sgy', 'segy'],
+                help='SEG-Y is converted to SU inside the project workspace.',
+            )
+            if uploaded is not None:
+                signature = f'{uploaded.name}:{uploaded.size}'
+                try:
+                    with st.spinner('Creating project and converting SEG-Y to SU...'):
+                        project, state = create_project(uploaded)
+                    st.session_state.upload_signature = signature
+                    st.session_state.project_id = project.project_id
+                    reset_chat_for_project()
+                    st.rerun()
+                except Exception as exc:
+                    st.error('Failed to initialize the project.')
+                    st.code(str(exc))
+            else:
+                st.info(
+                    'No dataset loaded. Chat is in Knowledge Mode: SU documentation and general '
+                    'processing guidance are available, but dataset-specific inspection and '
+                    'processing are disabled.'
+                )
+
+    if prompt:
+        st.session_state.chat_messages.append({'role': 'user', 'content': prompt})
+        st.session_state.pending_user_prompt = prompt
+        st.rerun()
+
+    queued_prompt = st.session_state.pop('pending_user_prompt', None)
+    if queued_prompt:
+        if not agent_ready:
+            st.session_state.chat_messages.append({
+                'role': 'assistant',
+                'content': agent_error or 'Agent is not configured.',
+            })
+            st.rerun()
+        try:
+            with st.spinner('Knowledge Mode is working...'):
+                run_knowledge_mode_turn(queued_prompt)
+            st.rerun()
+        except Exception as exc:
+            st.session_state.chat_messages.append({
+                'role': 'assistant',
+                'content': f'Knowledge Mode request failed: `{exc}`',
+            })
+            st.rerun()
+
+    st.stop()
+
+
+project = Project(DATA_ROOT, st.session_state.project_id)
+state = project.load_state()
+history = HistoryStore(project.history_dir / 'workflow.json')
+engine = WorkflowEngine(executor, history)
+current = project.path(state.current_dataset)
+metadata = read_su_metadata(current)
 
 agent_col, workspace_col = workstation_columns()
 with agent_col:

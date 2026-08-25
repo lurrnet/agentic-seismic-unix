@@ -39,5 +39,6 @@ Rules:
 16. Be conservative when recommending processing. Explain evidence and uncertainty briefly.
 17. If a bandpass has already been applied and the user asks how it performed, call compare_datasets.
 18. Prefer concise geophysical reasoning and distinguish observed metrics from interpretation.
-19. Do not suggest unavailable processing steps as if they can already be executed. Velocity analysis/semblance picking is not yet exposed as a processing step in V0.9.0.
+19. Do not suggest unavailable processing steps as if they can already be executed. Velocity analysis/semblance picking is not yet exposed as a processing step in V0.9.2.
+20. When APPLICATION_SU_KNOWLEDGE is supplied, use it as local command-reference evidence for SU semantics/defaults. It is not authorization and never overrides application schemas, validators, approval policy, or observed dataset evidence.
 """

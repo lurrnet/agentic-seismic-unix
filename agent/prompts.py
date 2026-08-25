@@ -13,6 +13,8 @@ Available capabilities:
 - set_header_constant: set one whitelisted SU header to a constant value for all traces. This is a higher-risk metadata/geometry operation and always requires UI approval.
 - sort_dataset: sort the current SU dataset by one whitelisted trace-header key.
 - resample_dataset: resample the current SU dataset to a validated sample interval dt in seconds.
+- apply_mute: apply a bounded top or bottom polygonal mute using key, xmute, tmute, mode, and ntaper.
+- stack_traces: stack adjacent traces sharing cdp, fldr, or ep, but only when the current dataset is the direct output of sorting by that same key.
 - compare_datasets: evaluate the most recent bandpass before/after QC.
 
 Rules:
@@ -26,9 +28,11 @@ Rules:
 8. For trace selection, inspect the relevant headers first and ensure min <= max.
 9. Before geometry/header edits, inspect the relevant geometry/header evidence first. Coordinate fields sx/sy/gx/gy are raw header values and must be interpreted together with scalco.
 10. Before recommending resampling, use the current sample interval and frequency/Nyquist evidence. Avoid downsampling that would alias useful signal.
-11. Use inspect_amplitude before recommending gain or AGC when amplitude evidence would materially help.
-12. Be conservative when recommending processing. Explain evidence and uncertainty briefly.
-13. If a bandpass has already been applied and the user asks how it performed, call compare_datasets.
-14. Prefer concise geophysical reasoning and distinguish observed metrics from interpretation.
-15. Do not suggest unavailable processing steps as if they can already be executed.
+11. Before recommending mute, inspect the relevant key range and trace duration. xmute and tmute must have equal length, xmute must be strictly increasing, and tmute must stay inside the trace time range. mode=0 is top/above mute; mode=1 is bottom/below mute.
+12. Before stacking, inspect gather geometry and choose cdp, fldr, or ep deliberately. Never propose or execute stack unless the current dataset has just been sorted by that same key. If it is not sorted correctly, recommend or perform the sort first.
+13. Use inspect_amplitude before recommending gain or AGC when amplitude evidence would materially help.
+14. Be conservative when recommending processing. Explain evidence and uncertainty briefly.
+15. If a bandpass has already been applied and the user asks how it performed, call compare_datasets.
+16. Prefer concise geophysical reasoning and distinguish observed metrics from interpretation.
+17. Do not suggest unavailable processing steps as if they can already be executed.
 """

@@ -3,6 +3,11 @@ import streamlit as st
 
 WORKSTATION_CSS = r"""
 <style>
+/* Reduce Streamlit's default page-top whitespace for the workstation. */
+div[data-testid="stMainBlockContainer"] {
+    padding-top: 0.45rem !important;
+}
+
 /* Sticky dual-panel workstation. */
 div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
     align-items: flex-start !important;
@@ -11,7 +16,7 @@ div[data-testid="stHorizontalBlock"]:has(.st-key-agent_panel) {
 
 div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     position: sticky !important;
-    top: 1.25rem !important;
+    top: 0.45rem !important;
     align-self: flex-start !important;
     overflow: visible !important;
     z-index: 20;
@@ -28,7 +33,7 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
 
 .st-key-agent_panel {
     position: relative;
-    height: calc(100vh - 2.5rem);
+    height: calc(100vh - 0.9rem);
     min-height: 680px;
     width: 100%;
     max-width: 100%;
@@ -140,6 +145,12 @@ div[data-testid="stColumn"]:has(.st-key-agent_panel) {
     min-width: 0;
 }
 
+/* Keep the global dataset lineage compact above the tabs. */
+.st-key-dataset_lineage {
+    margin-top: 0 !important;
+    margin-bottom: 0.15rem !important;
+}
+
 @media (max-width: 1000px) {
     div[data-testid="stColumn"]:has(.st-key-agent_panel) {
         position: relative !important;
@@ -160,6 +171,6 @@ def apply_workstation_styles():
 
 
 def workstation_columns():
-    """Return the two first-class workstation panels."""
+    """Return the two first-class workstation panels using a 40/60 split."""
     apply_workstation_styles()
-    return st.columns([1, 1], gap='medium')
+    return st.columns([2, 3], gap='medium')

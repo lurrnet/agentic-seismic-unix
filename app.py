@@ -24,7 +24,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.8.2'
+VERSION = '0.8.3'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -211,12 +211,20 @@ def is_explicit_followup_confirmation(prompt, action):
 
 if 'project_id' not in st.session_state:
     agent_col, workspace_col = workstation_columns()
-    with agent_col: render_agent_panel(provider_info=None, agent_ready=False, dataset_loaded=False)
+    with agent_col:
+        render_agent_panel(
+            provider_info=None,
+            agent_ready=False,
+            dataset_loaded=False,
+            version=VERSION,
+        )
     with workspace_col:
-        st.title(f'Agentic SeismicUnix V{VERSION}')
-        st.caption('AI-native Seismic Unix workstation')
         st.subheader('Open Project')
-        uploaded = st.file_uploader('Upload a SEG-Y file', type=['sgy', 'segy'], help='SEG-Y is converted to SU inside the project workspace.')
+        uploaded = st.file_uploader(
+            'Upload a SEG-Y file',
+            type=['sgy', 'segy'],
+            help='SEG-Y is converted to SU inside the project workspace.',
+        )
         if uploaded is None:
             st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
             st.stop()
@@ -256,7 +264,13 @@ except Exception as exc:
 
 agent_col, workspace_col = workstation_columns()
 with agent_col:
-    prompt, decision = render_agent_panel(provider_info, agent_ready=agent_ready, agent_error=agent_error, dataset_loaded=True)
+    prompt, decision = render_agent_panel(
+        provider_info,
+        agent_ready=agent_ready,
+        agent_error=agent_error,
+        dataset_loaded=True,
+        version=VERSION,
+    )
 
 if prompt:
     st.session_state.chat_messages.append({'role': 'user', 'content': prompt})

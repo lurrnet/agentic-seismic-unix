@@ -24,7 +24,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.8.4'
+VERSION = '0.8.5'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = None
@@ -219,27 +219,28 @@ if 'project_id' not in st.session_state:
             version=VERSION,
         )
     with workspace_col:
-        st.subheader('Open Project')
-        uploaded = st.file_uploader(
-            'Upload a SEG-Y file',
-            type=['sgy', 'segy'],
-            help='SEG-Y is converted to SU inside the project workspace.',
-        )
-        if uploaded is None:
-            st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
-            st.stop()
-        signature = f'{uploaded.name}:{uploaded.size}'
-        try:
-            with st.spinner('Creating project and converting SEG-Y to SU...'):
-                project, state = create_project(uploaded)
-            st.session_state.upload_signature = signature
-            st.session_state.project_id = project.project_id
-            reset_chat_for_project()
-            st.rerun()
-        except Exception as exc:
-            st.error('Failed to initialize the project.')
-            st.code(str(exc))
-            st.stop()
+        with st.container(key='initial_load_panel', border=False):
+            st.subheader('Load Data')
+            uploaded = st.file_uploader(
+                'Upload a SEG-Y file',
+                type=['sgy', 'segy'],
+                help='SEG-Y is converted to SU inside the project workspace.',
+            )
+            if uploaded is None:
+                st.info('Upload a `.sgy` or `.segy` file to begin. Agent chat will unlock after loading.')
+                st.stop()
+            signature = f'{uploaded.name}:{uploaded.size}'
+            try:
+                with st.spinner('Creating project and converting SEG-Y to SU...'):
+                    project, state = create_project(uploaded)
+                st.session_state.upload_signature = signature
+                st.session_state.project_id = project.project_id
+                reset_chat_for_project()
+                st.rerun()
+            except Exception as exc:
+                st.error('Failed to initialize the project.')
+                st.code(str(exc))
+                st.stop()
 
 project = Project(DATA_ROOT, st.session_state.project_id)
 state = project.load_state()

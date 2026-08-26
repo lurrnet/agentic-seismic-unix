@@ -2,29 +2,20 @@ import streamlit as st
 
 from seismic.io import get_surange, load_preview_traces
 from seismic.plotting import section_figure, spectrum_figure
-
-
-SEISMIC_COLORMAPS = [
-    'Gray',
-    'RdBu',
-    'RdYlBu',
-    'Spectral',
-    'Jet',
-    'Rainbow',
-    'Hot',
-    'Phase',
-    'Twilight',
-]
+from ui.plot_config import load_plotting_config
 
 
 @st.fragment
 def _render_workspace_plots(current_path, metadata, preview_traces):
     try:
         traces = load_preview_traces(current_path, metadata, preview_traces)
+        plot_cfg = load_plotting_config()
+        colormaps = plot_cfg['colormaps']
+        default_colormap = plot_cfg['default_colormap']
 
         st.caption('Plot controls')
-        control_left, control_right = st.columns([2, 1])
-        with control_left:
+        clip_col, cmap_col, polarity_col = st.columns([2, 1, 1])
+        with clip_col:
             clip_percentile = st.slider(
                 'Amplitude clip percentile',
                 min_value=90.0,
@@ -33,12 +24,19 @@ def _render_workspace_plots(current_path, metadata, preview_traces):
                 step=0.5,
                 key='workspace_seismic_clip_percentile',
             )
-        with control_right:
+        with cmap_col:
             colorscale = st.selectbox(
                 'Colormap',
-                SEISMIC_COLORMAPS,
-                index=0,
+                colormaps,
+                index=colormaps.index(default_colormap),
                 key='workspace_seismic_colormap',
+            )
+        with polarity_col:
+            flip_polarity = st.toggle(
+                'Flip polarity',
+                value=plot_cfg['default_flip_polarity'],
+                key='workspace_flip_polarity',
+                help='Display-only polarity reversal; the SU dataset is not modified.',
             )
 
         st.plotly_chart(
@@ -48,6 +46,7 @@ def _render_workspace_plots(current_path, metadata, preview_traces):
                 'Current seismic section',
                 clip_percentile=clip_percentile,
                 colorscale=colorscale,
+                flip_polarity=flip_polarity,
             ),
             use_container_width=True,
             key='workspace_current_section',

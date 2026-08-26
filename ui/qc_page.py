@@ -8,19 +8,7 @@ from seismic.plotting import (
     spectrum_comparison_figure,
 )
 from ui.dataset_lineage import dataset_steps, TOOL_LABELS
-
-
-SEISMIC_COLORMAPS = [
-    'Gray',
-    'RdBu',
-    'RdYlBu',
-    'Spectral',
-    'Jet',
-    'Rainbow',
-    'Hot',
-    'Phase',
-    'Twilight',
-]
+from ui.plot_config import load_plotting_config
 
 
 def _step_label(step):
@@ -28,8 +16,12 @@ def _step_label(step):
 
 
 def _seismic_plot_controls():
+    plot_cfg = load_plotting_config()
+    colormaps = plot_cfg['colormaps']
+    default_colormap = plot_cfg['default_colormap']
+
     st.caption('Plot Controls')
-    clip_col, cmap_col = st.columns([2, 1])
+    clip_col, cmap_col, polarity_col = st.columns([2, 1, 1])
     with clip_col:
         clip_percentile = st.slider(
             'Amplitude clip percentile',
@@ -46,11 +38,18 @@ def _seismic_plot_controls():
     with cmap_col:
         colorscale = st.selectbox(
             'Colormap',
-            SEISMIC_COLORMAPS,
-            index=0,
+            colormaps,
+            index=colormaps.index(default_colormap),
             key='qc_seismic_colormap',
         )
-    return clip_percentile, colorscale
+    with polarity_col:
+        flip_polarity = st.toggle(
+            'Flip polarity',
+            value=plot_cfg['default_flip_polarity'],
+            key='qc_flip_polarity',
+            help='Display-only polarity reversal; QC metrics and SU data are unchanged.',
+        )
+    return clip_percentile, colorscale, flip_polarity
 
 
 @st.fragment
@@ -124,7 +123,7 @@ def _render_qc_comparison(
             )
 
     else:
-        clip_percentile, colorscale = _seismic_plot_controls()
+        clip_percentile, colorscale, flip_polarity = _seismic_plot_controls()
         st.plotly_chart(
             section_comparison_figure(
                 before,
@@ -135,6 +134,7 @@ def _render_qc_comparison(
                 f'After · {_step_label(after_step)}',
                 clip_percentile=clip_percentile,
                 colorscale=colorscale,
+                flip_polarity=flip_polarity,
             ),
             use_container_width=True,
             key=f'qc_section_comparison_{selected_id}',

@@ -1,8 +1,12 @@
+import math
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from .spectrum import mean_amplitude_spectrum
+
+
+MAX_HEATMAP_SAMPLES = 1200
 
 
 def _section_clip(traces, percentile=99.0):
@@ -15,18 +19,29 @@ def _section_clip(traces, percentile=99.0):
     return clip if np.isfinite(clip) and clip > 0 else 1.0
 
 
+def _heatmap_view(traces, dt_s, max_samples=MAX_HEATMAP_SAMPLES):
+    """Decimate only the display-time axis; keep full samples for spectral QC."""
+    if traces is None or not traces.size:
+        raise ValueError('No traces available for plotting.')
+    sample_stride = max(1, int(math.ceil(traces.shape[1] / float(max_samples))))
+    view = traces[:, ::sample_stride]
+    t = np.arange(view.shape[1], dtype=np.float64) * dt_s * sample_stride
+    return view, t
+
+
 def section_figure(traces, dt_s, title, clip_percentile=99.0, colorscale='Gray'):
     clip = _section_clip(traces, clip_percentile)
-    t = np.arange(traces.shape[1]) * dt_s
+    view, t = _heatmap_view(traces, dt_s)
     fig = go.Figure(
         data=go.Heatmap(
-            z=traces.T,
-            x=np.arange(traces.shape[0]),
+            z=view.T,
+            x=np.arange(view.shape[0]),
             y=t,
             colorscale=colorscale,
             zmin=-clip,
             zmax=clip,
             colorbar=dict(title='Amp'),
+            hovertemplate='Trace %{x}<br>Time %{y:.4f} s<br>Amp %{z:.4g}<extra></extra>',
         )
     )
     fig.update_layout(
@@ -52,8 +67,8 @@ def section_comparison_figure(
     """Render before/after seismic sections with synchronized zoom and independent amplitude scales."""
     before_clip = _section_clip(before, clip_percentile)
     after_clip = _section_clip(after, clip_percentile)
-    before_t = np.arange(before.shape[1]) * before_dt_s
-    after_t = np.arange(after.shape[1]) * after_dt_s
+    before_view, before_t = _heatmap_view(before, before_dt_s)
+    after_view, after_t = _heatmap_view(after, after_dt_s)
 
     fig = make_subplots(
         rows=1,
@@ -66,8 +81,8 @@ def section_comparison_figure(
 
     fig.add_trace(
         go.Heatmap(
-            z=before.T,
-            x=np.arange(before.shape[0]),
+            z=before_view.T,
+            x=np.arange(before_view.shape[0]),
             y=before_t,
             colorscale=colorscale,
             zmin=-before_clip,
@@ -90,8 +105,8 @@ def section_comparison_figure(
     )
     fig.add_trace(
         go.Heatmap(
-            z=after.T,
-            x=np.arange(after.shape[0]),
+            z=after_view.T,
+            x=np.arange(after_view.shape[0]),
             y=after_t,
             colorscale=colorscale,
             zmin=-after_clip,

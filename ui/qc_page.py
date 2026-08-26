@@ -3,7 +3,12 @@ import streamlit as st
 
 from seismic.io import read_su_metadata, load_preview_traces
 from seismic.qc import compare_filter_result
-from seismic.plotting import section_figure, spectrum_figure
+from seismic.plotting import (
+    section_figure,
+    spectrum_figure,
+    section_comparison_figure,
+    spectrum_comparison_figure,
+)
 from ui.dataset_lineage import dataset_steps, TOOL_LABELS
 
 
@@ -66,19 +71,18 @@ def render_qc(state, history, selected_step, preview_traces=None):
     )
 
     if view == 'Spectrum':
-        l, r = st.columns(2)
-        with l:
-            st.plotly_chart(
-                spectrum_figure(before, None, before_meta.dt_s),
-                use_container_width=True,
-                key=f'qc_before_spectrum_{selected_id}',
-            )
-        with r:
-            st.plotly_chart(
-                spectrum_figure(after, None, after_meta.dt_s),
-                use_container_width=True,
-                key=f'qc_after_spectrum_{selected_id}',
-            )
+        st.plotly_chart(
+            spectrum_comparison_figure(
+                before,
+                after,
+                before_meta.dt_s,
+                after_meta.dt_s,
+                f'Before · {_step_label(before_step)}',
+                f'After · {_step_label(after_step)}',
+            ),
+            use_container_width=True,
+            key=f'qc_spectrum_comparison_{selected_id}',
+        )
 
     elif view == 'Metrics':
         a, b, c, d = st.columns(4)
@@ -115,19 +119,18 @@ def render_qc(state, history, selected_step, preview_traces=None):
             )
 
     else:
-        l, r = st.columns(2)
-        with l:
-            st.plotly_chart(
-                section_figure(before, before_meta.dt_s, f'Before · {_step_label(before_step)}'),
-                use_container_width=True,
-                key=f'qc_before_section_{selected_id}',
-            )
-        with r:
-            st.plotly_chart(
-                section_figure(after, after_meta.dt_s, f'After · {_step_label(after_step)}'),
-                use_container_width=True,
-                key=f'qc_after_section_{selected_id}',
-            )
+        st.plotly_chart(
+            section_comparison_figure(
+                before,
+                after,
+                before_meta.dt_s,
+                after_meta.dt_s,
+                f'Before · {_step_label(before_step)}',
+                f'After · {_step_label(after_step)}',
+            ),
+            use_container_width=True,
+            key=f'qc_section_comparison_{selected_id}',
+        )
 
     reflection = st.session_state.get('last_reflection')
     if reflection and selected_id == int(state.current_step) and after_step.get('tool') == 'sufilter':

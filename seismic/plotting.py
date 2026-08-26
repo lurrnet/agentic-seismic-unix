@@ -2,6 +2,7 @@ import math
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import streamlit as st
 
 from .spectrum import mean_amplitude_spectrum
 
@@ -9,6 +10,7 @@ from .spectrum import mean_amplitude_spectrum
 MAX_HEATMAP_SAMPLES = 1200
 
 
+@st.cache_data(show_spinner=False, max_entries=128)
 def _section_clip(traces, percentile=99.0):
     if traces is None or not traces.size:
         return 1.0
@@ -19,14 +21,21 @@ def _section_clip(traces, percentile=99.0):
     return clip if np.isfinite(clip) and clip > 0 else 1.0
 
 
+@st.cache_data(show_spinner=False, max_entries=128)
 def _heatmap_view(traces, dt_s, max_samples=MAX_HEATMAP_SAMPLES):
-    """Decimate only the display-time axis; keep full samples for spectral QC."""
+    """Return a cached display-resolution seismic matrix and time vector."""
     if traces is None or not traces.size:
         raise ValueError('No traces available for plotting.')
     sample_stride = max(1, int(math.ceil(traces.shape[1] / float(max_samples))))
     view = traces[:, ::sample_stride]
     t = np.arange(view.shape[1], dtype=np.float64) * dt_s * sample_stride
     return view, t
+
+
+@st.cache_data(show_spinner=False, max_entries=128)
+def _mean_spectrum_cached(traces, dt_s):
+    """Cache the plot-ready normalized mean amplitude spectrum."""
+    return mean_amplitude_spectrum(traces, dt_s)
 
 
 def section_figure(traces, dt_s, title, clip_percentile=99.0, colorscale='Gray'):
@@ -140,11 +149,11 @@ def section_comparison_figure(
 
 
 def spectrum_figure(before, after, dt_s):
-    f0, a0 = mean_amplitude_spectrum(before, dt_s)
+    f0, a0 = _mean_spectrum_cached(before, dt_s)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=f0, y=a0, mode='lines', name='Before'))
     if after is not None:
-        f1, a1 = mean_amplitude_spectrum(after, dt_s)
+        f1, a1 = _mean_spectrum_cached(after, dt_s)
         fig.add_trace(go.Scatter(x=f1, y=a1, mode='lines', name='After'))
     fig.update_layout(
         title='Mean normalized amplitude spectrum',
@@ -157,8 +166,8 @@ def spectrum_figure(before, after, dt_s):
 
 def spectrum_comparison_figure(before, after, before_dt_s, after_dt_s, before_title, after_title):
     """Overlay before/after spectra on one shared set of axes."""
-    before_f, before_a = mean_amplitude_spectrum(before, before_dt_s)
-    after_f, after_a = mean_amplitude_spectrum(after, after_dt_s)
+    before_f, before_a = _mean_spectrum_cached(before, before_dt_s)
+    after_f, after_a = _mean_spectrum_cached(after, after_dt_s)
 
     fig = go.Figure()
     fig.add_trace(

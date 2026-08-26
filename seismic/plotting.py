@@ -83,7 +83,7 @@ def section_comparison_figure(before, after, before_dt_s, after_dt_s, before_tit
     # A single invisible helper heatmap owns the shared horizontal colorbar.
     fig.add_trace(
         go.Heatmap(
-            z=[[ -clip, clip ]],
+            z=[[-clip, clip]],
             x=[0, 1],
             y=[0],
             colorscale='Gray',
@@ -135,33 +135,32 @@ def spectrum_figure(before, after, dt_s):
 
 
 def spectrum_comparison_figure(before, after, before_dt_s, after_dt_s, before_title, after_title):
-    """Render before/after spectra in one figure with synchronized zoom."""
+    """Overlay before/after spectra on one shared set of axes."""
     before_f, before_a = mean_amplitude_spectrum(before, before_dt_s)
     after_f, after_a = mean_amplitude_spectrum(after, after_dt_s)
 
-    fig = make_subplots(
-        rows=1,
-        cols=2,
-        shared_xaxes=False,
-        shared_yaxes=False,
-        horizontal_spacing=0.07,
-        subplot_titles=(before_title, after_title),
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=before_f,
+            y=before_a,
+            mode='lines',
+            name=before_title,
+        )
     )
     fig.add_trace(
-        go.Scatter(x=before_f, y=before_a, mode='lines', name='Before', showlegend=False),
-        row=1,
-        col=1,
+        go.Scatter(
+            x=after_f,
+            y=after_a,
+            mode='lines',
+            name=after_title,
+        )
     )
-    fig.add_trace(
-        go.Scatter(x=after_f, y=after_a, mode='lines', name='After', showlegend=False),
-        row=1,
-        col=2,
-    )
-    fig.update_xaxes(title_text='Frequency (Hz)', matches='x')
-    fig.update_yaxes(title_text='Normalized amplitude', matches='y')
     fig.update_layout(
         title='Mean normalized amplitude spectrum',
+        xaxis_title='Frequency (Hz)',
+        yaxis_title='Normalized amplitude',
         height=460,
-        showlegend=False,
+        legend=dict(orientation='h', x=0, y=1.02, xanchor='left', yanchor='bottom'),
     )
     return fig

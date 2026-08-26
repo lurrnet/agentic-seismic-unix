@@ -4,6 +4,7 @@ import sys
 import subprocess
 
 import numpy as np
+import streamlit as st
 
 from su.executor import SUExecutionError, _decode
 
@@ -99,25 +100,61 @@ def get_surange(path):
     return _decode(p.stdout)
 
 
-def load_preview_traces(path, metadata, max_traces=200):
-    max_traces = None if max_traces is None else max(1, int(max_traces))
-    sample_bytes = metadata.ns * 4
-    sample_dtype = np.dtype('<f4' if metadata.endian == 'little' else '>f4')
+@st.cache_data(show_spinner=False, max_entries=64)
+def _load_preview_traces_cached(
+    path_str,
+    ns,
+    endian,
+    trace_bytes,
+    estimated_trace_count,
+    max_traces,
+    file_size_bytes,
+    mtime_ns,
+):
+    """Load an evenly sampled, bounded trace preview.
+
+    file_size_bytes and mtime_ns are intentionally included in the cache key so
+    a file replaced in place invalidates its cached preview.
+    """
+    del file_size_bytes, mtime_ns
+    ntr = max(1, int(estimated_trace_count))
+    count = min(max(1, int(max_traces)), ntr)
+    if count == ntr:
+        indices = np.arange(ntr, dtype=np.int64)
+    else:
+        indices = np.unique(np.linspace(0, ntr - 1, count, dtype=np.int64))
+
+    sample_bytes = int(ns) * 4
+    sample_dtype = np.dtype('<f4' if endian == 'little' else '>f4')
     traces = []
-    with open(path, 'rb') as fin:
-        while max_traces is None or len(traces) < max_traces:
-            header = fin.read(240)
-            if not header:
-                break
-            if len(header) < 240:
-                break
+    with open(path_str, 'rb') as fin:
+        for trace_index in indices:
+            fin.seek(int(trace_index) * int(trace_bytes) + 240)
             samples = fin.read(sample_bytes)
             if len(samples) < sample_bytes:
-                break
+                continue
             traces.append(np.frombuffer(samples, dtype=sample_dtype).astype(np.float32))
+
     if not traces:
         raise ValueError('No complete traces extracted from the SU dataset.')
     return np.stack(traces)
+
+
+def load_preview_traces(path, metadata, max_traces=1000):
+    """Return up to max_traces evenly distributed traces from the full SU file."""
+    path = Path(path)
+    max_traces = 1000 if max_traces is None else max(1, int(max_traces))
+    stat = path.stat()
+    return _load_preview_traces_cached(
+        str(path),
+        int(metadata.ns),
+        str(metadata.endian),
+        int(metadata.trace_bytes),
+        int(metadata.estimated_trace_count),
+        int(max_traces),
+        int(stat.st_size),
+        int(stat.st_mtime_ns),
+    )
 
 
 def summarize_su_headers(path, metadata, keys, max_traces=1000):

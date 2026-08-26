@@ -33,7 +33,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.7'
+VERSION = '0.9.8'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = 1000

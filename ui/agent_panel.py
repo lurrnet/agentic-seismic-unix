@@ -1,6 +1,7 @@
 import streamlit as st
 
 from .components.proposal_card import render_proposal_card
+from .workstation import APP_VERSION
 
 
 def render_agent_panel(
@@ -14,9 +15,7 @@ def render_agent_panel(
     with st.container(key='agent_panel', border=False):
         with st.container(key='agent_panel_stack', border=False):
             with st.container(key='agent_header', border=False):
-                title = 'Agentic SeismicUnix'
-                if version:
-                    title += f' · v{version}'
+                title = f'Agentic SeismicUnix · v{APP_VERSION}'
                 st.markdown(f'### {title}')
                 if not dataset_loaded:
                     if agent_ready:

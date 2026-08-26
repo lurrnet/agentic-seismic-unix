@@ -4,8 +4,6 @@ import streamlit as st
 from seismic.io import read_su_metadata, load_preview_traces
 from seismic.qc import compare_filter_result
 from seismic.plotting import (
-    section_figure,
-    spectrum_figure,
     section_comparison_figure,
     spectrum_comparison_figure,
 )
@@ -64,30 +62,17 @@ def render_qc(state, history, selected_step, preview_traces=None):
 
     after_step = steps[selected_index]
     after_path = Path(after_step['output'])
-    after_meta = read_su_metadata(after_path)
-    after = load_preview_traces(after_path, after_meta, preview_traces)
 
     if selected_index == 0:
         st.caption(f"Viewing {_step_label(after_step)} · `{after_path.name}`")
-        st.info('The import step has no previous dataset to compare against.')
-        clip_percentile, colorscale = _seismic_plot_controls()
-        st.plotly_chart(
-            section_figure(
-                after,
-                after_meta.dt_s,
-                f'{_step_label(after_step)}',
-                clip_percentile=clip_percentile,
-                colorscale=colorscale,
-            ),
-            use_container_width=True,
-            key=f'qc_import_section_{selected_id}',
-        )
-        st.plotly_chart(
-            spectrum_figure(after, None, after_meta.dt_s),
-            use_container_width=True,
-            key=f'qc_import_spectrum_{selected_id}',
+        st.info(
+            'QC is available after at least one processing step. '
+            'The imported dataset is already displayed in the Workspace tab.'
         )
         return
+
+    after_meta = read_su_metadata(after_path)
+    after = load_preview_traces(after_path, after_meta, preview_traces)
 
     before_step = steps[selected_index - 1]
     before_path = Path(before_step['output'])

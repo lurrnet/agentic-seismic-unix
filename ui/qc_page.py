@@ -43,46 +43,20 @@ def _seismic_plot_controls():
     return clip_percentile, colorscale
 
 
-def render_qc(state, history, selected_step, preview_traces=None):
-    st.header('QC')
-
-    steps = dataset_steps(history)
-    if not steps or selected_step is None:
-        st.info('No dataset step is available for QC.')
-        return
-
-    selected_id = int(selected_step['step_id'])
-    selected_index = next(
-        (i for i, item in enumerate(steps) if int(item['step_id']) == selected_id),
-        None,
-    )
-    if selected_index is None:
-        st.warning('The selected dataset step could not be resolved from project history.')
-        return
-
-    after_step = steps[selected_index]
-    after_path = Path(after_step['output'])
-
-    if selected_index == 0:
-        st.caption(f"Viewing {_step_label(after_step)} · `{after_path.name}`")
-        st.info(
-            'QC is available after at least one processing step. '
-            'The imported dataset is already displayed in the Workspace tab.'
-        )
-        return
-
-    after_meta = read_su_metadata(after_path)
-    after = load_preview_traces(after_path, after_meta, preview_traces)
-
-    before_step = steps[selected_index - 1]
-    before_path = Path(before_step['output'])
-    before_meta = read_su_metadata(before_path)
+@st.fragment
+def _render_qc_comparison(
+    state,
+    before_step,
+    after_step,
+    before_path,
+    after_path,
+    before_meta,
+    after_meta,
+    preview_traces,
+):
     before = load_preview_traces(before_path, before_meta, preview_traces)
-
-    st.caption(
-        f"Before: {_step_label(before_step)} · `{before_path.name}`  →  "
-        f"After: {_step_label(after_step)} · `{after_path.name}`"
-    )
+    after = load_preview_traces(after_path, after_meta, preview_traces)
+    selected_id = int(after_step['step_id'])
 
     view = st.segmented_control(
         'QC view',
@@ -164,3 +138,53 @@ def render_qc(state, history, selected_step, preview_traces=None):
             st.write(reflection.get('text'))
         if reflection.get('confidence'):
             st.caption(f"Confidence: {reflection.get('confidence')}")
+
+
+def render_qc(state, history, selected_step, preview_traces=None):
+    st.header('QC')
+
+    steps = dataset_steps(history)
+    if not steps or selected_step is None:
+        st.info('No dataset step is available for QC.')
+        return
+
+    selected_id = int(selected_step['step_id'])
+    selected_index = next(
+        (i for i, item in enumerate(steps) if int(item['step_id']) == selected_id),
+        None,
+    )
+    if selected_index is None:
+        st.warning('The selected dataset step could not be resolved from project history.')
+        return
+
+    after_step = steps[selected_index]
+    after_path = Path(after_step['output'])
+
+    if selected_index == 0:
+        st.caption(f"Viewing {_step_label(after_step)} · `{after_path.name}`")
+        st.info(
+            'QC is available after at least one processing step. '
+            'The imported dataset is already displayed in the Workspace tab.'
+        )
+        return
+
+    before_step = steps[selected_index - 1]
+    before_path = Path(before_step['output'])
+    before_meta = read_su_metadata(before_path)
+    after_meta = read_su_metadata(after_path)
+
+    st.caption(
+        f"Before: {_step_label(before_step)} · `{before_path.name}`  →  "
+        f"After: {_step_label(after_step)} · `{after_path.name}`"
+    )
+
+    _render_qc_comparison(
+        state,
+        before_step,
+        after_step,
+        before_path,
+        after_path,
+        before_meta,
+        after_meta,
+        preview_traces,
+    )

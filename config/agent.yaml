@@ -29,3 +29,17 @@ reflection:
   enabled: true
   auto_after_agent_filter: true
   max_preview_traces: 200
+
+plotting:
+  colormaps:
+    - Gray
+    - RdBu
+    - Spectral
+    - Jet
+    - Rainbow
+    - Hot
+    - Phase
+    - Twilight
+    - Balance
+  default_colormap: Gray
+  default_flip_polarity: false

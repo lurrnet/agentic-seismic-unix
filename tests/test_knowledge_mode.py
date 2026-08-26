@@ -33,7 +33,10 @@ def test_knowledge_mode_exposes_no_application_tools():
     assert 'tool_choice' not in call
     assert 'previous_response_id' not in call
     assert call['instructions'] == KNOWLEDGE_MODE_INSTRUCTIONS
-    assert call['input'][-1] == {'role': 'user', 'content': 'What does supef do?'}
+    assert isinstance(call['input'], str)
+    assert 'Assistant: Knowledge Mode is active.' in call['input']
+    assert 'User: What does supef do?' in call['input']
+    assert call['input'].rstrip().endswith('Assistant:')
 
 
 def test_knowledge_mode_instructions_forbid_dataset_claims_and_proposals():

@@ -4,7 +4,17 @@ from seismic.io import get_surange, load_preview_traces
 from seismic.plotting import section_figure, spectrum_figure
 
 
-SEISMIC_COLORMAPS = ['Gray', 'RdBu', 'Viridis', 'Cividis', 'Turbo']
+SEISMIC_COLORMAPS = [
+    'Gray',
+    'RdBu',
+    'RdYlBu',
+    'Spectral',
+    'Jet',
+    'Rainbow',
+    'Hot',
+    'Phase',
+    'Twilight',
+]
 
 
 @st.fragment

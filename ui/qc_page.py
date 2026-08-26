@@ -12,8 +12,37 @@ from seismic.plotting import (
 from ui.dataset_lineage import dataset_steps, TOOL_LABELS
 
 
+SEISMIC_COLORMAPS = ['Gray', 'RdBu', 'Viridis', 'Cividis', 'Turbo']
+
+
 def _step_label(step):
     return f"Step {step['step_id']} · {TOOL_LABELS.get(step['tool'], step['tool'])}"
+
+
+def _seismic_plot_controls():
+    st.caption('Plot Controls')
+    clip_col, cmap_col = st.columns([2, 1])
+    with clip_col:
+        clip_percentile = st.slider(
+            'Amplitude clip percentile',
+            min_value=90.0,
+            max_value=100.0,
+            value=99.0,
+            step=0.5,
+            key='qc_seismic_clip_percentile',
+            help=(
+                'Each subplot computes its own symmetric amplitude limit from '
+                'the selected percentile of absolute amplitude.'
+            ),
+        )
+    with cmap_col:
+        colorscale = st.selectbox(
+            'Colormap',
+            SEISMIC_COLORMAPS,
+            index=0,
+            key='qc_seismic_colormap',
+        )
+    return clip_percentile, colorscale
 
 
 def render_qc(state, history, selected_step, preview_traces=None):
@@ -41,8 +70,15 @@ def render_qc(state, history, selected_step, preview_traces=None):
     if selected_index == 0:
         st.caption(f"Viewing {_step_label(after_step)} · `{after_path.name}`")
         st.info('The import step has no previous dataset to compare against.')
+        clip_percentile, colorscale = _seismic_plot_controls()
         st.plotly_chart(
-            section_figure(after, after_meta.dt_s, f'{_step_label(after_step)}'),
+            section_figure(
+                after,
+                after_meta.dt_s,
+                f'{_step_label(after_step)}',
+                clip_percentile=clip_percentile,
+                colorscale=colorscale,
+            ),
             use_container_width=True,
             key=f'qc_import_section_{selected_id}',
         )
@@ -119,6 +155,7 @@ def render_qc(state, history, selected_step, preview_traces=None):
             )
 
     else:
+        clip_percentile, colorscale = _seismic_plot_controls()
         st.plotly_chart(
             section_comparison_figure(
                 before,
@@ -127,6 +164,8 @@ def render_qc(state, history, selected_step, preview_traces=None):
                 after_meta.dt_s,
                 f'Before · {_step_label(before_step)}',
                 f'After · {_step_label(after_step)}',
+                clip_percentile=clip_percentile,
+                colorscale=colorscale,
             ),
             use_container_width=True,
             key=f'qc_section_comparison_{selected_id}',

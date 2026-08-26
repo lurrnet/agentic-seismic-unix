@@ -10,7 +10,17 @@ from seismic.plotting import (
 from ui.dataset_lineage import dataset_steps, TOOL_LABELS
 
 
-SEISMIC_COLORMAPS = ['Gray', 'RdBu', 'Viridis', 'Cividis', 'Turbo']
+SEISMIC_COLORMAPS = [
+    'Gray',
+    'RdBu',
+    'RdYlBu',
+    'Spectral',
+    'Jet',
+    'Rainbow',
+    'Hot',
+    'Phase',
+    'Twilight',
+]
 
 
 def _step_label(step):

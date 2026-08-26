@@ -33,10 +33,10 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.6'
+VERSION = '0.9.7'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
-PREVIEW_TRACES = None
+PREVIEW_TRACES = 1000
 
 st.set_page_config(
     page_title=f'Agentic SeismicUnix V{VERSION}',
@@ -581,35 +581,42 @@ current = project.path(state.current_dataset)
 metadata = read_su_metadata(current)
 with workspace_col:
     selected_step = render_dataset_lineage(state, history)
-    view_path = project.path(selected_step['output']) if selected_step else current
-    view_metadata = read_su_metadata(view_path)
 
-    workspace_tab, processing_tab, qc_tab, history_tab, agent_details_tab, readme_tab = st.tabs(
-        ['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme']
-    )
+    pages = ['Workspace', 'Processing', 'QC', 'History', 'Agent Details', 'Readme']
+    if st.session_state.get('workspace_page') not in pages:
+        st.session_state.workspace_page = 'Workspace'
+    page = st.segmented_control(
+        'Workspace page',
+        pages,
+        key='workspace_page',
+        label_visibility='collapsed',
+    ) or 'Workspace'
+
     new_project_requested = False
-    with workspace_tab:
+    if page == 'Workspace':
+        view_path = project.path(selected_step['output']) if selected_step else current
+        view_metadata = read_su_metadata(view_path)
         new_project_requested = render_workspace(
             project, state, view_metadata, history, view_path, PREVIEW_TRACES
         )
-    with processing_tab:
+    elif page == 'Processing':
         render_processing(project, state, engine, metadata, current, PREVIEW_TRACES)
-    with qc_tab:
+    elif page == 'QC':
         try:
             render_qc(state, history, selected_step, PREVIEW_TRACES)
         except Exception as exc:
             st.warning('QC page could not be rendered for the selected dataset step.')
             st.code(str(exc))
-    with history_tab:
+    elif page == 'History':
         render_history(state, history, registry)
-    with agent_details_tab:
+    elif page == 'Agent Details':
         render_agent_details(
             provider_info=provider_info,
             agent_ready=agent_ready,
             agent_error=agent_error,
             history=history,
         )
-    with readme_tab:
+    elif page == 'Readme':
         render_readme()
 
 if new_project_requested:

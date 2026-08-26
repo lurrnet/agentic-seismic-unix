@@ -5,23 +5,25 @@ from plotly.subplots import make_subplots
 from .spectrum import mean_amplitude_spectrum
 
 
-def _section_clip(*datasets):
-    values = [np.abs(data) for data in datasets if data is not None and data.size]
-    if not values:
+def _section_clip(traces, percentile=99.0):
+    if traces is None or not traces.size:
         return 1.0
-    clip = float(np.percentile(np.concatenate([value.ravel() for value in values]), 99.0))
+    percentile = float(percentile)
+    if percentile <= 0 or percentile > 100:
+        raise ValueError('Clip percentile must be greater than 0 and at most 100.')
+    clip = float(np.percentile(np.abs(traces), percentile))
     return clip if np.isfinite(clip) and clip > 0 else 1.0
 
 
-def section_figure(traces, dt_s, title):
-    clip = _section_clip(traces)
+def section_figure(traces, dt_s, title, clip_percentile=99.0, colorscale='Gray'):
+    clip = _section_clip(traces, clip_percentile)
     t = np.arange(traces.shape[1]) * dt_s
     fig = go.Figure(
         data=go.Heatmap(
             z=traces.T,
             x=np.arange(traces.shape[0]),
             y=t,
-            colorscale='Gray',
+            colorscale=colorscale,
             zmin=-clip,
             zmax=clip,
             colorbar=dict(title='Amp'),
@@ -37,9 +39,19 @@ def section_figure(traces, dt_s, title):
     return fig
 
 
-def section_comparison_figure(before, after, before_dt_s, after_dt_s, before_title, after_title):
-    """Render before/after seismic sections in one figure with synchronized zoom."""
-    clip = _section_clip(before, after)
+def section_comparison_figure(
+    before,
+    after,
+    before_dt_s,
+    after_dt_s,
+    before_title,
+    after_title,
+    clip_percentile=99.0,
+    colorscale='Gray',
+):
+    """Render before/after seismic sections with synchronized zoom and independent amplitude scales."""
+    before_clip = _section_clip(before, clip_percentile)
+    after_clip = _section_clip(after, clip_percentile)
     before_t = np.arange(before.shape[1]) * before_dt_s
     after_t = np.arange(after.shape[1]) * after_dt_s
 
@@ -52,19 +64,26 @@ def section_comparison_figure(before, after, before_dt_s, after_dt_s, before_tit
         subplot_titles=(before_title, after_title),
     )
 
-    common_heatmap = dict(
-        colorscale='Gray',
-        zmin=-clip,
-        zmax=clip,
-        showscale=False,
-        hovertemplate='Trace %{x}<br>Time %{y:.4f} s<br>Amp %{z:.4g}<extra></extra>',
-    )
     fig.add_trace(
         go.Heatmap(
             z=before.T,
             x=np.arange(before.shape[0]),
             y=before_t,
-            **common_heatmap,
+            colorscale=colorscale,
+            zmin=-before_clip,
+            zmax=before_clip,
+            showscale=True,
+            colorbar=dict(
+                title=dict(text='Before amplitude', side='top'),
+                orientation='h',
+                x=0.235,
+                xanchor='center',
+                y=-0.18,
+                yanchor='top',
+                len=0.42,
+                thickness=14,
+            ),
+            hovertemplate='Trace %{x}<br>Time %{y:.4f} s<br>Amp %{z:.4g}<extra></extra>',
         ),
         row=1,
         col=1,
@@ -74,43 +93,30 @@ def section_comparison_figure(before, after, before_dt_s, after_dt_s, before_tit
             z=after.T,
             x=np.arange(after.shape[0]),
             y=after_t,
-            **common_heatmap,
+            colorscale=colorscale,
+            zmin=-after_clip,
+            zmax=after_clip,
+            showscale=True,
+            colorbar=dict(
+                title=dict(text='After amplitude', side='top'),
+                orientation='h',
+                x=0.765,
+                xanchor='center',
+                y=-0.18,
+                yanchor='top',
+                len=0.42,
+                thickness=14,
+            ),
+            hovertemplate='Trace %{x}<br>Time %{y:.4f} s<br>Amp %{z:.4g}<extra></extra>',
         ),
         row=1,
         col=2,
     )
 
-    # A single invisible helper heatmap owns the shared horizontal colorbar.
-    fig.add_trace(
-        go.Heatmap(
-            z=[[-clip, clip]],
-            x=[0, 1],
-            y=[0],
-            colorscale='Gray',
-            zmin=-clip,
-            zmax=clip,
-            opacity=0,
-            hoverinfo='skip',
-            showscale=True,
-            colorbar=dict(
-                title=dict(text='Amplitude', side='top'),
-                orientation='h',
-                x=0.5,
-                xanchor='center',
-                y=-0.18,
-                yanchor='top',
-                len=0.72,
-                thickness=14,
-            ),
-        ),
-        row=1,
-        col=1,
-    )
-
     fig.update_xaxes(title_text='Preview trace index', matches='x')
     fig.update_yaxes(title_text='Time (s)', autorange='reversed', matches='y')
     fig.update_layout(
-        title='Seismic comparison',
+        title=f'Seismic comparison · {float(clip_percentile):g}% amplitude clip',
         height=650,
         margin=dict(b=115),
         showlegend=False,

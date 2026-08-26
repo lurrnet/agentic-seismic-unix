@@ -28,15 +28,21 @@ Keep the distinction clear: Knowledge Mode explains; Project Mode inspects, vali
 """
 
 
-def _history_items(chat_history: list[dict[str, str]], user_text: str) -> list[dict[str, str]]:
-    items: list[dict[str, str]] = []
+def _history_transcript(chat_history: list[dict[str, str]], user_text: str) -> str:
+    """Render bounded chat history as one OpenClaw-compatible text input."""
+    lines = [
+        'KNOWLEDGE_MODE_CONVERSATION:',
+        'The following is conversation context only; no seismic dataset is loaded.',
+    ]
     for message in chat_history[-20:]:
         role = message.get('role')
-        content = message.get('content', '')
+        content = str(message.get('content', '') or '').strip()
         if role in {'user', 'assistant'} and content:
-            items.append({'role': role, 'content': content})
-    items.append({'role': 'user', 'content': user_text})
-    return items
+            label = 'User' if role == 'user' else 'Assistant'
+            lines.append(f'{label}: {content}')
+    lines.append(f'User: {str(user_text or "").strip()}')
+    lines.append('Assistant:')
+    return '\n'.join(lines)
 
 
 def run_knowledge_turn(
@@ -48,7 +54,11 @@ def run_knowledge_turn(
     provider = provider or create_provider()
     kwargs: dict[str, Any] = {
         'instructions': KNOWLEDGE_MODE_INSTRUCTIONS,
-        'input': _history_items(chat_history, user_text),
+        # OpenClaw's current /v1/responses compatibility endpoint accepts the
+        # simple string input shape already used by Project Mode. Keep history
+        # inside a bounded text transcript instead of passing role/content
+        # message objects, which some OpenClaw versions reject as invalid input.
+        'input': _history_transcript(chat_history, user_text),
     }
     if provider.name == 'openclaw':
         kwargs['user'] = 'seismic-knowledge-mode'

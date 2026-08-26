@@ -1,13 +1,12 @@
-from pathlib import Path
 import streamlit as st
-
-from seismic.io import read_su_metadata, load_preview_traces
-from seismic.plotting import section_figure, spectrum_figure
 
 
 def render_processing(project, state, engine, metadata, current_path, preview_traces=None):
     st.header('Processing')
-    st.caption('Processing changes data. Display controls and QC plots do not.')
+    st.caption(
+        'Manual processing controls. Use this tab for operations you want to run directly '
+        'without initiating them through agent chat.'
+    )
 
     df4 = min(75.0, metadata.nyquist_hz * .90)
     df3 = min(60.0, df4 * .80)
@@ -43,14 +42,3 @@ def render_processing(project, state, engine, metadata, current_path, preview_tr
             st.session_state.pending_action = None
             st.success(f'Created {out.name}')
             st.rerun()
-
-    st.subheader('Current input preview')
-    try:
-        traces = load_preview_traces(current_path, metadata, preview_traces)
-        left, right = st.columns([3, 2])
-        with left:
-            st.plotly_chart(section_figure(traces, metadata.dt_s, 'Input section'), use_container_width=True)
-        with right:
-            st.plotly_chart(spectrum_figure(traces, None, metadata.dt_s), use_container_width=True)
-    except Exception as exc:
-        st.warning(str(exc))

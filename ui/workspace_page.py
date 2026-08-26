@@ -4,6 +4,9 @@ from seismic.io import get_surange, load_preview_traces
 from seismic.plotting import section_figure, spectrum_figure
 
 
+SEISMIC_COLORMAPS = ['Gray', 'RdBu', 'Viridis', 'Cividis', 'Turbo']
+
+
 def render_workspace(project, state, metadata, history, current_path, preview_traces=None):
     top_left, top_right = st.columns([5, 1])
     with top_left:
@@ -23,8 +26,34 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
 
     try:
         traces = load_preview_traces(current_path, metadata, preview_traces)
+
+        st.caption('Plot controls')
+        control_left, control_right = st.columns([2, 1])
+        with control_left:
+            clip_percentile = st.slider(
+                'Amplitude clip percentile',
+                min_value=90.0,
+                max_value=100.0,
+                value=99.0,
+                step=0.5,
+                key='workspace_seismic_clip_percentile',
+            )
+        with control_right:
+            colorscale = st.selectbox(
+                'Colormap',
+                SEISMIC_COLORMAPS,
+                index=0,
+                key='workspace_seismic_colormap',
+            )
+
         st.plotly_chart(
-            section_figure(traces, metadata.dt_s, 'Current seismic section'),
+            section_figure(
+                traces,
+                metadata.dt_s,
+                'Current seismic section',
+                clip_percentile=clip_percentile,
+                colorscale=colorscale,
+            ),
             use_container_width=True,
             key='workspace_current_section',
         )

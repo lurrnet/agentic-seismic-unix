@@ -7,23 +7,8 @@ from seismic.plotting import section_figure, spectrum_figure
 SEISMIC_COLORMAPS = ['Gray', 'RdBu', 'Viridis', 'Cividis', 'Turbo']
 
 
-def render_workspace(project, state, metadata, history, current_path, preview_traces=None):
-    top_left, top_right = st.columns([5, 1])
-    with top_left:
-        st.header('Workspace')
-    with top_right:
-        new_project = st.button(
-            'Load new dataset',
-            use_container_width=True,
-            key='workspace_load_new_dataset',
-        )
-
-    a, b, c, d = st.columns(4)
-    a.metric('Samples / trace', f'{metadata.ns:,}')
-    b.metric('Sample interval', f'{metadata.dt_us:,} us')
-    c.metric('Nyquist', f'{metadata.nyquist_hz:.2f} Hz')
-    d.metric('Estimated traces', f'{metadata.estimated_trace_count:,}')
-
+@st.fragment
+def _render_workspace_plots(current_path, metadata, preview_traces):
     try:
         traces = load_preview_traces(current_path, metadata, preview_traces)
 
@@ -65,6 +50,26 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
     except Exception as exc:
         st.warning('Current dataset preview could not be generated.')
         st.code(str(exc))
+
+
+def render_workspace(project, state, metadata, history, current_path, preview_traces=None):
+    top_left, top_right = st.columns([5, 1])
+    with top_left:
+        st.header('Workspace')
+    with top_right:
+        new_project = st.button(
+            'Load new dataset',
+            use_container_width=True,
+            key='workspace_load_new_dataset',
+        )
+
+    a, b, c, d = st.columns(4)
+    a.metric('Samples / trace', f'{metadata.ns:,}')
+    b.metric('Sample interval', f'{metadata.dt_us:,} us')
+    c.metric('Nyquist', f'{metadata.nyquist_hz:.2f} Hz')
+    d.metric('Estimated traces', f'{metadata.estimated_trace_count:,}')
+
+    _render_workspace_plots(current_path, metadata, preview_traces)
 
     recs = history.list()
     filters = [r for r in recs if r.get('tool') == 'sufilter' and r.get('status') == 'success']

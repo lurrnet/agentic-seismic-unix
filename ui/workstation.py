@@ -1,7 +1,7 @@
 import streamlit as st
 
 
-APP_VERSION = '0.9.7'
+APP_VERSION = '0.9.8'
 SIDEBAR_WIDTH = 400
 
 

@@ -38,13 +38,25 @@ def _mean_spectrum_cached(traces, dt_s):
     return mean_amplitude_spectrum(traces, dt_s)
 
 
-def section_figure(traces, dt_s, title, clip_percentile=99.0, colorscale='Gray'):
+def _display_polarity(view, flip_polarity):
+    return -view if flip_polarity else view
+
+
+def section_figure(
+    traces,
+    dt_s,
+    title,
+    clip_percentile=99.0,
+    colorscale='Gray',
+    flip_polarity=False,
+):
     clip = _section_clip(traces, clip_percentile)
     view, t = _heatmap_view(traces, dt_s)
+    display_view = _display_polarity(view, flip_polarity)
     fig = go.Figure(
         data=go.Heatmap(
-            z=view.T,
-            x=np.arange(view.shape[0]),
+            z=display_view.T,
+            x=np.arange(display_view.shape[0]),
             y=t,
             colorscale=colorscale,
             zmin=-clip,
@@ -72,12 +84,15 @@ def section_comparison_figure(
     after_title,
     clip_percentile=99.0,
     colorscale='Gray',
+    flip_polarity=False,
 ):
     """Render before/after seismic sections with synchronized zoom and independent amplitude scales."""
     before_clip = _section_clip(before, clip_percentile)
     after_clip = _section_clip(after, clip_percentile)
     before_view, before_t = _heatmap_view(before, before_dt_s)
     after_view, after_t = _heatmap_view(after, after_dt_s)
+    before_display = _display_polarity(before_view, flip_polarity)
+    after_display = _display_polarity(after_view, flip_polarity)
 
     fig = make_subplots(
         rows=1,
@@ -90,8 +105,8 @@ def section_comparison_figure(
 
     fig.add_trace(
         go.Heatmap(
-            z=before_view.T,
-            x=np.arange(before_view.shape[0]),
+            z=before_display.T,
+            x=np.arange(before_display.shape[0]),
             y=before_t,
             colorscale=colorscale,
             zmin=-before_clip,
@@ -114,8 +129,8 @@ def section_comparison_figure(
     )
     fig.add_trace(
         go.Heatmap(
-            z=after_view.T,
-            x=np.arange(after_view.shape[0]),
+            z=after_display.T,
+            x=np.arange(after_display.shape[0]),
             y=after_t,
             colorscale=colorscale,
             zmin=-after_clip,

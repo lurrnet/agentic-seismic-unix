@@ -72,6 +72,10 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
             key='workspace_load_new_dataset',
         )
 
+    if new_project:
+        project.cleanup_working_set()
+        return True
+
     a, b, c, d = st.columns(4)
     a.metric('Samples / trace', f'{metadata.ns:,}')
     b.metric('Sample interval', f'{metadata.dt_us:,} us')
@@ -103,4 +107,4 @@ def render_workspace(project, state, metadata, history, current_path, preview_tr
             '        -> Accept or approval-gated adjustment'
         )
 
-    return new_project
+    return False

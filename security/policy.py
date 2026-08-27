@@ -41,6 +41,7 @@ def get_security_limits() -> dict[str, int]:
         'import_timeout_seconds': _env_int('SECURITY_IMPORT_TIMEOUT_SECONDS', 1800),
         'min_free_bytes': _env_int('SECURITY_MIN_FREE_BYTES', 5 * 1024**3),
         'agent_requests_per_minute': _env_int('SECURITY_AGENT_REQUESTS_PER_MINUTE', 20),
+        'ram_min_free_bytes': _env_int('SECURITY_RAM_MIN_FREE_BYTES', 2 * 1024**3),
     }
 
 
@@ -88,20 +89,37 @@ def enforce_storage_headroom(storage_path: Path, expected_write_bytes: int = 0) 
         )
 
 
+def enforce_ram_headroom(storage_path: Path, expected_write_bytes: int = 0) -> None:
+    limits = get_security_limits()
+    usage = shutil.disk_usage(Path(storage_path))
+    required = max(0, int(expected_write_bytes)) + limits['ram_min_free_bytes']
+    if usage.free < required:
+        raise SecurityLimitError(
+            f'Insufficient RAM workspace under {storage_path}: {usage.free} bytes free; '
+            f'at least {required} bytes required including RAM safety reserve.'
+        )
+
+
 def enforce_processing_limits(project, state, expected_output_bytes: int = 0) -> None:
     limits = get_security_limits()
     if int(state.current_step) >= limits['max_processing_steps']:
         raise SecurityLimitError(
             f'Project has reached the maximum of {limits["max_processing_steps"]} processing steps.'
         )
-    used = directory_size_bytes(Path(project.root))
-    projected = used + max(0, int(expected_output_bytes))
+
+    persistent_used = directory_size_bytes(Path(project.root))
+    working_used = directory_size_bytes(Path(project.work_root))
+    projected = persistent_used + working_used + max(0, int(expected_output_bytes))
     if projected > limits['max_project_bytes']:
         raise SecurityLimitError(
             f'Projected project storage {projected} bytes exceeds configured limit '
             f'{limits["max_project_bytes"]} bytes.'
         )
-    enforce_storage_headroom(Path(project.root), expected_output_bytes)
+
+    if getattr(project, 'uses_ram_workspace', False):
+        enforce_ram_headroom(Path(project.work_root), expected_output_bytes)
+    else:
+        enforce_storage_headroom(Path(project.root), expected_output_bytes)
 
 
 _RATE_LOCK = threading.Lock()

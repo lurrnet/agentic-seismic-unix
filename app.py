@@ -321,12 +321,58 @@ def is_explicit_followup_confirmation(prompt, action):
     spec = registry.get(action['tool'])
     if spec.get('approval_policy') != 'explicit_or_approval':
         return False
-    text = prompt.strip().lower()
-    operation_terms = 'agc|gain|filter|bandpass|selection|sort|resample|mute|stack|decon|deconvolution|nmo|moveout'
+
+    text = re.sub(r'\s+', ' ', prompt.strip().lower()).strip(' .!')
+    generic_confirmations = {
+        'yes',
+        'yes go ahead',
+        'go ahead',
+        'proceed',
+        'do it',
+        'run it',
+        'execute it',
+        'apply it',
+        'go apply it',
+        'go run it',
+        'go execute it',
+        'go ahead and do it',
+        'go ahead and run it',
+        'go ahead and execute it',
+        'go ahead and apply it',
+    }
+    if text in generic_confirmations:
+        return True
+
+    tool_terms = {
+        'sufilter': {'filter', 'bandpass'},
+        'sugain': {'gain'},
+        'suagc': {'agc'},
+        'suwind': {'selection', 'trace selection', 'suwind'},
+        'susort': {'sort', 'sorting'},
+        'suresamp': {'resample', 'resampling'},
+        'sumute': {'mute'},
+        'sustack': {'stack', 'stacking'},
+        'supef': {'decon', 'deconvolution', 'pef'},
+        'sunmo': {'nmo', 'moveout'},
+    }
+    expected_terms = tool_terms.get(action.get('tool'), set())
+    all_terms = sorted(
+        {term for terms in tool_terms.values() for term in terms},
+        key=len,
+        reverse=True,
+    )
+    named_terms = {
+        term for term in all_terms
+        if re.search(rf'\b{re.escape(term)}\b', text)
+    }
+    if named_terms and not (named_terms & expected_terms):
+        return False
+
+    reference = r'(?:that|this|such|the\s+(?:recommended|proposed))?'
+    operation = '|'.join(re.escape(term) for term in all_terms)
     patterns = (
-        r'^(?:yes[, ]*)?(?:go ahead|proceed|do it|run it|execute it|apply it)[.! ]*$',
-        rf'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:that|this|such)(?:\s+(?:{operation_terms}))?[.! ]*$',
-        rf'^(?:yes[, ]*)?(?:apply|run|execute)\s+(?:the\s+)?(?:recommended|proposed)\s+(?:{operation_terms})[.! ]*$',
+        rf'^(?:yes\s+)?(?:go\s+)?(?:apply|run|execute)\s+{reference}\s*(?:{operation})?$',
+        rf'^(?:yes\s+)?(?:go\s+ahead\s+and\s+)(?:apply|run|execute)\s+{reference}\s*(?:{operation})?$',
     )
     return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 

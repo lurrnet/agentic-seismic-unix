@@ -506,6 +506,7 @@ queued_prompt = st.session_state.pop('pending_user_prompt', None)
 if queued_prompt:
     with st.spinner('Agent is working...'):
         pending = st.session_state.get('pending_action')
+        pending_consumed = False
         if pending:
             try:
                 intent_result = resolve_pending_followup(queued_prompt, pending, project)
@@ -561,7 +562,7 @@ if queued_prompt:
                             ),
                         })
                         st.rerun()
-                if authorization == REJECT_PENDING:
+                elif authorization == REJECT_PENDING:
                     st.session_state.pending_action = None
                     st.session_state.chat_messages.append({
                         'role': 'assistant',
@@ -571,68 +572,98 @@ if queued_prompt:
                         ),
                     })
                     st.rerun()
+                else:
+                    intent = intent_result.get('intent')
+                    references_pending = bool(intent_result.get('references_pending'))
+                    if references_pending and intent in {APPROVE_PENDING, REJECT_PENDING, 'ambiguous'}:
+                        confidence = float(intent_result.get('confidence') or 0.0)
+                        st.session_state.chat_messages.append({
+                            'role': 'assistant',
+                            'content': (
+                                f"I interpreted your message in relation to the pending **{pending.get('display_name', pending.get('tool', 'processing'))}** proposal, "
+                                f"but the authorization confidence was only {confidence:.2f}. I did not execute or replace the proposal. "
+                                'Please confirm plainly if you want the existing pending proposal executed unchanged.'
+                            ),
+                        })
+                        pending_consumed = True
+                        st.rerun()
+                    elif references_pending and intent in {'question_about_pending_action', 'modify_pending_action'}:
+                        pending_consumed = False
+                    elif intent == 'new_request':
+                        pending_consumed = False
+                    elif intent == 'ambiguous':
+                        st.session_state.chat_messages.append({
+                            'role': 'assistant',
+                            'content': (
+                                f"There is still a pending **{pending.get('display_name', pending.get('tool', 'processing'))}** proposal. "
+                                'I could not determine whether this message approves it, rejects it, modifies it, or starts a new request, so I did not execute anything.'
+                            ),
+                        })
+                        pending_consumed = True
+                        st.rerun()
 
-        explicit_command = parse_explicit_user_command(queued_prompt)
-        if explicit_command is not None:
-            try:
-                action = build_explicit_processing_action(
-                    explicit_command, project, state, history
-                )
-                execute_authorized_action(
-                    queued_prompt,
-                    action,
-                    project,
-                    state,
-                    history,
-                    engine,
-                    routed_by='explicit_user_command',
-                )
-                st.rerun()
-            except Exception as exc:
-                audit_event(
-                    project,
-                    'explicit_processing_command_rejected',
-                    severity='warning',
-                    details={
-                        'action': explicit_command.get('action'),
-                        'error': str(exc),
-                    },
-                )
+        if not pending_consumed:
+            explicit_command = parse_explicit_user_command(queued_prompt)
+            if explicit_command is not None:
+                try:
+                    action = build_explicit_processing_action(
+                        explicit_command, project, state, history
+                    )
+                    execute_authorized_action(
+                        queued_prompt,
+                        action,
+                        project,
+                        state,
+                        history,
+                        engine,
+                        routed_by='explicit_user_command',
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    audit_event(
+                        project,
+                        'explicit_processing_command_rejected',
+                        severity='warning',
+                        details={
+                            'action': explicit_command.get('action'),
+                            'error': str(exc),
+                        },
+                    )
+                    st.session_state.chat_messages.append({
+                        'role': 'assistant',
+                        'content': (
+                            'I recognized an explicit processing command, but the application '
+                            f'rejected it during validation: `{exc}`. No processing was run.'
+                        ),
+                    })
+                    st.rerun()
+            elif not agent_ready:
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
-                    'content': (
-                        'I recognized an explicit processing command, but the application '
-                        f'rejected it during validation: `{exc}`. No processing was run.'
-                    ),
+                    'content': agent_error or 'Agent is not configured.',
                 })
                 st.rerun()
-        elif not agent_ready:
-            st.session_state.chat_messages.append({
-                'role': 'assistant',
-                'content': agent_error or 'Agent is not configured.',
-            })
-            st.rerun()
-        else:
-            try:
-                run_agent_turn(queued_prompt, project, state, history)
-                st.rerun()
-            except AgentConfigurationError as exc:
-                st.session_state.chat_messages.append(
-                    {'role': 'assistant', 'content': str(exc)}
-                )
-                st.rerun()
-            except Exception as exc:
-                audit_event(
-                    project,
-                    'agent_request_rejected_or_failed',
-                    severity='warning',
-                    details={'error': str(exc)},
-                )
-                st.session_state.chat_messages.append({
-                    'role': 'assistant',
-                    'content': f'Agent request failed: `{exc}`',
-                })
-                st.rerun()
+            else:
+                try:
+                    run_agent_turn(queued_prompt, project, state, history)
+                    st.rerun()
+                except AgentConfigurationError as exc:
+                    st.session_state.chat_messages.append(
+                        {'role': 'assistant', 'content': str(exc)}
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    audit_event(
+                        project,
+                        'agent_request_rejected_or_failed',
+                        severity='warning',
+                        details={'error': str(exc)},
+                    )
+                    st.session_state.chat_messages.append({
+                        'role': 'assistant',
+                        'content': f'Agent request failed: `{exc}`',
+                    })
+                    st.rerun()
 
 state = project.load_state()
 current = project.path(state.current_dataset)

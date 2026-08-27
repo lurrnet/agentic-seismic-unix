@@ -33,7 +33,7 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.8'
+VERSION = '0.9.9'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = 1000
@@ -78,6 +78,7 @@ def create_project(uploaded):
             'reason': 'SEG-Y import',
             'status': 'success',
             'output_bytes': su.stat().st_size,
+            'storage': 'ram' if project.uses_ram_workspace else 'disk',
         })
         audit_event(
             project,
@@ -86,6 +87,7 @@ def create_project(uploaded):
                 'upload_name': Path(uploaded.name).name,
                 'upload_size': int(uploaded.size),
                 'output_bytes': su.stat().st_size,
+                'storage': 'ram' if project.uses_ram_workspace else 'disk',
             },
         )
         return project, state
@@ -100,6 +102,7 @@ def create_project(uploaded):
             shutil.rmtree(project.root)
         except OSError:
             pass
+        project.cleanup_working_set()
         raise
 
 

@@ -1,8 +1,10 @@
 from pathlib import Path
+import os
 import re
+import shutil
 import uuid
 
-from security.policy import ensure_path_within
+from security.policy import SecurityLimitError, ensure_path_within
 from .state import ProjectState
 
 
@@ -10,25 +12,53 @@ _PROJECT_ID_RE = re.compile(r'^[a-f0-9]{32}$')
 
 
 class Project:
-    def __init__(self, root, project_id=None):
+    def __init__(self, root, project_id=None, work_root=None):
         self.base_root = Path(root).resolve()
         if project_id is None:
             project_id = uuid.uuid4().hex
         project_id = str(project_id)
         if not _PROJECT_ID_RE.fullmatch(project_id):
             raise ValueError('Invalid project id.')
+
         self.project_id = project_id
         self.root = ensure_path_within(self.base_root / project_id, self.base_root)
+
+        configured_work_root = work_root or os.getenv('SEISMIC_WORK_ROOT') or self.base_root
+        self.work_base_root = Path(configured_work_root).resolve()
+        self.work_base_root.mkdir(parents=True, exist_ok=True)
+        self.work_root = ensure_path_within(
+            self.work_base_root / project_id,
+            self.work_base_root,
+        )
+
         self.raw_dir = self.root / 'raw'
-        self.data_dir = self.root / 'data'
+        self.data_dir = self.work_root / 'data'
         self.qc_dir = self.root / 'qc'
         self.history_dir = self.root / 'history'
         self.state_path = self.root / 'project.json'
-        for directory in [self.raw_dir, self.data_dir, self.qc_dir, self.history_dir]:
+
+        for directory in [
+            self.raw_dir,
+            self.data_dir,
+            self.qc_dir,
+            self.history_dir,
+        ]:
             directory.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def uses_ram_workspace(self):
+        return self.work_base_root != self.base_root
+
     def path(self, value):
-        return ensure_path_within(Path(value), self.root)
+        candidate = Path(value).resolve()
+        for root in (self.root, self.work_root):
+            try:
+                return ensure_path_within(candidate, root)
+            except SecurityLimitError:
+                continue
+        raise SecurityLimitError(
+            f'Path escapes persistent and working project roots: {candidate}'
+        )
 
     def initialize(self, input_file, current_dataset, metadata):
         input_file = str(self.path(input_file))
@@ -56,3 +86,12 @@ class Project:
             raise ValueError('Invalid processing operation name.')
         path = self.data_dir / f'step{self.load_state().current_step + 1:03d}_{safe_operation}.su'
         return self.path(path)
+
+    def cleanup_working_set(self):
+        if not self.uses_ram_workspace:
+            return
+        try:
+            if self.work_root.exists():
+                shutil.rmtree(self.work_root)
+        except OSError:
+            pass

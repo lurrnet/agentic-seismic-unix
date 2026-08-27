@@ -1,22 +1,14 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from .prompts import SYSTEM_PROMPT
 from .toolkit import TOOL_SCHEMAS, AgentToolkit
 from .provider_factory import create_provider
 from .providers.base import AgentProvider, AgentConfigurationError
-from .proposal_fallback import parse_proposal_from_text
+from .proposal_fallback import normalize_processing_text, parse_proposal_from_text
 from .reflection import extract_json_object, ReflectionParseError
-
-
-def _normalize_processing_text(text: str) -> str:
-    """Normalize common seismic-processing spelling variants for intent routing."""
-    normalized = text.lower()
-    normalized = re.sub(r'\bband[\s-]+pass\b', 'bandpass', normalized)
-    return normalized
 
 
 class SeismicAgent:
@@ -25,28 +17,28 @@ class SeismicAgent:
 
     @staticmethod
     def _route_read_tool(user_text: str) -> tuple[str, dict[str, Any]] | None:
-        text = _normalize_processing_text(user_text)
+        text = normalize_processing_text(user_text)
         if any(token in text for token in ('review the filter', 'filter result', 'filtering result', 'did the filter', 'compare datasets', 'compare the result')):
             return 'compare_datasets', {}
-        if any(token in text for token in ('gather', 'fold', 'prestack', 'pre-stack', 'nmo', 'moveout', 'velocity analysis')):
+        if any(token in text for token in ('gather', 'fold', 'prestack', 'nmo', 'velocity analysis')):
             return 'inspect_gathers', {'key': 'cdp', 'max_traces': 5000}
         if any(token in text for token in (
             'geometry', 'acquisition geometry', 'source coordinate', 'receiver coordinate',
             'set header', 'change header', 'rewrite header', 'sort dataset', 'sort traces',
-            'sort by', 'order by', 'stack', 'stacking',
+            'sort by', 'sort on', 'order by', 'reorder', 'stack', 'stacking',
         )):
             return 'inspect_geometry', {'max_traces': 2000}
         if any(token in text for token in (
-            'header', 'offset', 'cdp', 'fldr', 'tracf', 'select traces',
-            'trace selection', 'subset traces', 'suwind', 'mute', 'xmute', 'tmute',
+            'header', 'offset', 'cdp', 'fldr', 'tracf', 'select traces', 'keep offsets',
+            'keep cdps', 'trace selection', 'subset traces', 'suwind', 'mute', 'xmute', 'tmute',
         )):
             return 'inspect_headers', {
                 'keys': ['fldr', 'tracf', 'cdp', 'offset', 'sx', 'gx'],
                 'max_traces': 1000,
             }
-        if any(token in text for token in ('decon', 'deconvolution', 'predictive error filter', 'pef', 'multiple suppression')):
+        if any(token in text for token in ('decon', 'deconvolution', 'predictive decon', 'pef', 'multiple suppression')):
             return 'inspect_frequency', {'max_traces': 200}
-        if any(token in text for token in ('resample', 'resampling', 'change sample interval', 'sample interval to', 'downsample', 'upsample')):
+        if any(token in text for token in ('resample', 'change sample interval', 'change sampling', 'sample interval', 'sample rate', 'downsample', 'upsample')):
             return 'inspect_frequency', {'max_traces': 200}
         if any(token in text for token in ('amplitude', 'rms', 'dynamic range', 'gain', 'agc', 'clipping')):
             return 'inspect_amplitude', {'max_traces': 200}
@@ -58,28 +50,28 @@ class SeismicAgent:
 
     @staticmethod
     def _proposal_action(user_text: str) -> str | None:
-        text = _normalize_processing_text(user_text)
+        text = normalize_processing_text(user_text)
         if any(token in text for token in ('recommend a reasonable bandpass', 'recommend a bandpass', 'recommend bandpass', 'recommend a filter', 'recommend filter', 'filter recommendation', 'suggest a bandpass', 'suggest a filter', 'what filter', 'which filter', 'apply bandpass', 'run bandpass')):
             return 'apply_bandpass_filter'
-        if any(token in text for token in ('apply agc', 'run agc', 'recommend agc', 'suggest agc', 'automatic gain control')):
+        if any(token in text for token in ('apply agc', 'run agc', 'recommend agc', 'suggest agc')):
             return 'apply_agc'
         if any(token in text for token in ('apply gain', 'run gain', 'recommend gain', 'suggest gain', 'time gain', 'power gain')):
             return 'apply_gain'
-        if any(token in text for token in ('select traces', 'trace selection', 'subset traces', 'window traces', 'apply suwind', 'run suwind')):
+        if any(token in text for token in ('select traces', 'trace selection', 'subset traces', 'window traces', 'keep offsets', 'keep cdps', 'apply suwind', 'run suwind')):
             return 'select_traces'
         if any(token in text for token in ('set header', 'change header', 'rewrite header', 'set cdp', 'set fldr', 'set offset', 'set sx', 'set sy', 'set gx', 'set gy')):
             return 'set_header_constant'
-        if any(token in text for token in ('sort dataset', 'sort traces', 'sort by', 'order by', 'recommend sort', 'recommend sorting')):
+        if any(token in text for token in ('sort dataset', 'sort traces', 'sort by', 'sort on', 'cdp sort', 'offset sort', 'order by', 'reorder', 'recommend sort', 'recommend sorting')):
             return 'sort_dataset'
-        if any(token in text for token in ('resample', 'resampling', 'change sample interval', 'sample interval to', 'downsample', 'upsample')):
+        if any(token in text for token in ('resample', 'change sample interval', 'change sampling', 'sample interval', 'sample rate', 'downsample', 'upsample')):
             return 'resample_dataset'
         if any(token in text for token in ('apply mute', 'run mute', 'recommend mute', 'suggest mute', 'top mute', 'bottom mute', 'xmute', 'tmute')):
             return 'apply_mute'
-        if any(token in text for token in ('stack traces', 'stack dataset', 'stack by', 'run stack', 'apply stack', 'recommend stack', 'recommend stacking')):
+        if any(token in text for token in ('stack traces', 'stack dataset', 'stack by', 'cdp stack', 'fldr stack', 'ep stack', 'run stack', 'apply stack', 'recommend stack', 'recommend stacking')):
             return 'stack_traces'
-        if any(token in text for token in ('apply decon', 'run decon', 'predictive decon', 'predictive error filter', 'apply pef', 'run pef', 'recommend decon', 'suggest decon')):
+        if any(token in text for token in ('apply decon', 'run decon', 'predictive decon', 'apply pef', 'run pef', 'recommend decon', 'suggest decon')):
             return 'apply_predictive_decon'
-        if any(token in text for token in ('apply nmo', 'run nmo', 'normal moveout', 'moveout correction', 'recommend nmo', 'suggest nmo')):
+        if any(token in text for token in ('apply nmo', 'run nmo', 'recommend nmo', 'suggest nmo')):
             return 'apply_nmo'
         return None
 

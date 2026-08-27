@@ -4,6 +4,7 @@ import shutil
 import uuid
 import streamlit as st
 
+from version import VERSION
 from agent.seismic_agent import SeismicAgent, AgentConfigurationError
 from agent.knowledge_mode import run_knowledge_turn
 from agent.provider_factory import load_agent_config
@@ -33,7 +34,6 @@ from ui.readme_page import render_readme
 from ui.dataset_lineage import render_dataset_lineage
 
 
-VERSION = '0.9.9'
 DATA_ROOT = Path('/data/projects')
 TOOLS_DIR = Path('/app/tools')
 PREVIEW_TRACES = 1000

@@ -57,6 +57,7 @@ def render_agent_details(
     trace = st.session_state.get('last_tool_trace') or []
     reflection = st.session_state.get('last_reflection')
     pending = st.session_state.get('pending_action')
+    intent_resolution = st.session_state.get('last_intent_resolution')
 
     records = history.list() if history is not None else []
     command_records = [
@@ -92,6 +93,22 @@ def render_agent_details(
         st.json(trace)
     else:
         st.caption('No agent tool trace is available yet.')
+
+    st.subheader('Last Intent Resolution')
+    if intent_resolution:
+        st.markdown(f"**Intent:** `{intent_resolution.get('intent', 'unknown')}`")
+        if intent_resolution.get('confidence') is not None:
+            st.markdown(f"**Confidence:** `{intent_resolution.get('confidence')}`")
+        st.markdown(
+            f"**References Pending Proposal:** `{bool(intent_resolution.get('references_pending'))}`"
+        )
+        st.markdown(f"**Source:** `{intent_resolution.get('source', 'unknown')}`")
+        if intent_resolution.get('reason'):
+            st.write(intent_resolution.get('reason'))
+        with st.expander('Intent payload', expanded=False):
+            st.json(intent_resolution)
+    else:
+        st.caption('No pending-action semantic intent resolution is available yet.')
 
     st.subheader('Latest Reflection')
     if reflection:

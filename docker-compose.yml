@@ -21,6 +21,7 @@ services:
     environment:
       AGENT_CONFIG_PATH: ${AGENT_CONFIG_PATH:-/app/config/agent.yaml}
       AGENT_PROVIDER: ${AGENT_PROVIDER:-}
+      SEISMIC_WORK_ROOT: ${SEISMIC_WORK_ROOT:-/dev/shm/agenticsu}
       PYTHONDONTWRITEBYTECODE: "1"
       HOME: /tmp
       SECURITY_MAX_UPLOAD_BYTES: ${SECURITY_MAX_UPLOAD_BYTES:-2147483648}
@@ -29,11 +30,17 @@ services:
       SECURITY_SU_TIMEOUT_SECONDS: ${SECURITY_SU_TIMEOUT_SECONDS:-1800}
       SECURITY_IMPORT_TIMEOUT_SECONDS: ${SECURITY_IMPORT_TIMEOUT_SECONDS:-1800}
       SECURITY_MIN_FREE_BYTES: ${SECURITY_MIN_FREE_BYTES:-5368709120}
+      SECURITY_RAM_MIN_FREE_BYTES: ${SECURITY_RAM_MIN_FREE_BYTES:-2147483648}
       SECURITY_AGENT_REQUESTS_PER_MINUTE: ${SECURITY_AGENT_REQUESTS_PER_MINUTE:-20}
 
     volumes:
       - ./data:/data
       - ./config:/app/config:ro
+
+    # Seismic SU working datasets live here. This keeps intermediate reads and
+    # writes in RAM while raw uploads, state, history and audit records remain
+    # persistent under /data.
+    shm_size: "12gb"
 
     read_only: true
     tmpfs:

@@ -2,7 +2,7 @@ services:
   seismic-agent:
     build:
       context: .
-    image: seismic-agent-v0.9.10:arm64
+    image: seismic-agent-v0.10.0:arm64
     container_name: agentic-seismic-unix
     restart: unless-stopped
 

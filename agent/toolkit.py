@@ -93,14 +93,14 @@ TOOL_SCHEMAS = [
     {
         'type': 'function',
         'name': 'apply_gain',
-        'description': 'Propose deterministic sugain time/power gain and clipping.',
+        'description': 'Propose deterministic sugain scalar/time/power gain and optional clipping.',
         'parameters': {
             'type': 'object',
             'properties': {
-                'tpow': {'type': 'number'}, 'gpow': {'type': 'number'},
-                'qclip': {'type': 'number'}, 'reason': {'type': 'string'},
+                'scale': {'type': 'number'}, 'tpow': {'type': 'number'},
+                'gpow': {'type': 'number'}, 'qclip': {'type': 'number'}, 'reason': {'type': 'string'},
             },
-            'required': ['tpow', 'gpow', 'qclip', 'reason'],
+            'required': ['scale', 'tpow', 'gpow', 'qclip', 'reason'],
             'additionalProperties': False,
         },
         'strict': True,
@@ -393,7 +393,18 @@ class AgentToolkit:
         return self._propose_processing(action_name='apply_bandpass_filter', registry_tool='sufilter', parameters={k: arguments[k] for k in ('f1', 'f2', 'f3', 'f4')}, reason=arguments['reason'], operation='filter')
 
     def propose_gain(self, arguments):
-        return self._propose_processing(action_name='apply_gain', registry_tool='sugain', parameters={k: arguments[k] for k in ('tpow', 'gpow', 'qclip')}, reason=arguments['reason'], operation='gain')
+        return self._propose_processing(
+            action_name='apply_gain',
+            registry_tool='sugain',
+            parameters={
+                'scale': arguments.get('scale', 1.0),
+                'tpow': arguments.get('tpow', 0.0),
+                'gpow': arguments.get('gpow', 1.0),
+                'qclip': arguments.get('qclip', 1.0),
+            },
+            reason=arguments['reason'],
+            operation='gain',
+        )
 
     def propose_agc(self, arguments):
         return self._propose_processing(action_name='apply_agc', registry_tool='suagc', parameters={'wagc': arguments['wagc']}, reason=arguments['reason'], operation='agc')

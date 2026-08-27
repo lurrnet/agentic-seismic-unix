@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .prompts import SYSTEM_PROMPT
@@ -11,13 +12,20 @@ from .proposal_fallback import parse_proposal_from_text
 from .reflection import extract_json_object, ReflectionParseError
 
 
+def _normalize_processing_text(text: str) -> str:
+    """Normalize common seismic-processing spelling variants for intent routing."""
+    normalized = text.lower()
+    normalized = re.sub(r'\bband[\s-]+pass\b', 'bandpass', normalized)
+    return normalized
+
+
 class SeismicAgent:
     def __init__(self, provider: AgentProvider | None = None):
         self.provider = provider or create_provider()
 
     @staticmethod
     def _route_read_tool(user_text: str) -> tuple[str, dict[str, Any]] | None:
-        text = user_text.lower()
+        text = _normalize_processing_text(user_text)
         if any(token in text for token in ('review the filter', 'filter result', 'filtering result', 'did the filter', 'compare datasets', 'compare the result')):
             return 'compare_datasets', {}
         if any(token in text for token in ('gather', 'fold', 'prestack', 'pre-stack', 'nmo', 'moveout', 'velocity analysis')):
@@ -50,7 +58,7 @@ class SeismicAgent:
 
     @staticmethod
     def _proposal_action(user_text: str) -> str | None:
-        text = user_text.lower()
+        text = _normalize_processing_text(user_text)
         if any(token in text for token in ('recommend a reasonable bandpass', 'recommend a bandpass', 'recommend bandpass', 'recommend a filter', 'recommend filter', 'filter recommendation', 'suggest a bandpass', 'suggest a filter', 'what filter', 'which filter', 'apply bandpass', 'run bandpass')):
             return 'apply_bandpass_filter'
         if any(token in text for token in ('apply agc', 'run agc', 'recommend agc', 'suggest agc', 'automatic gain control')):
@@ -108,7 +116,7 @@ class SeismicAgent:
     def _proposal_instructions(action: str) -> str:
         formats = {
             'apply_bandpass_filter': '{"action":"apply_bandpass_filter","parameters":{"f1":number,"f2":number,"f3":number,"f4":number},"reason":"short evidence-based reason"}',
-            'apply_gain': '{"action":"apply_gain","parameters":{"tpow":number,"gpow":number,"qclip":number},"reason":"short evidence-based reason"}',
+            'apply_gain': '{"action":"apply_gain","parameters":{"scale":number,"tpow":number,"gpow":number,"qclip":number},"reason":"short evidence-based reason"}',
             'apply_agc': '{"action":"apply_agc","parameters":{"wagc":number},"reason":"short evidence-based reason"}',
             'select_traces': '{"action":"select_traces","parameters":{"key":"header","min":number,"max":number},"reason":"short evidence-based reason"}',
             'set_header_constant': '{"action":"set_header_constant","parameters":{"key":"header","value":integer},"reason":"short evidence-based reason"}',
@@ -121,7 +129,7 @@ class SeismicAgent:
         }
         constraints = {
             'apply_bandpass_filter': 'Frequencies are Hz and must satisfy 0 <= f1 < f2 < f3 < f4 < Nyquist.',
-            'apply_gain': 'Use conservative sugain parameters: -5 <= tpow <= 5, 0.1 <= gpow <= 5, and 0 <= qclip <= 1.',
+            'apply_gain': 'Use scale for scalar amplitude multiplication; tpow/gpow are time/power gain controls and qclip is optional clipping.',
             'apply_agc': 'wagc is seconds and must be 0.01 to 10 seconds.',
             'select_traces': 'Use one inspected SU header key and require min <= max.',
             'set_header_constant': 'Only use a whitelisted header key. Header rewriting is high risk and always requires UI approval.',
@@ -148,7 +156,7 @@ class SeismicAgent:
             params = proposal
         reason = proposal.get('reason') or 'Agent processing recommendation.'
         if action == 'apply_bandpass_filter': return toolkit.propose_bandpass({'f1': params.get('f1'), 'f2': params.get('f2'), 'f3': params.get('f3'), 'f4': params.get('f4'), 'reason': reason})
-        if action == 'apply_gain': return toolkit.propose_gain({'tpow': params.get('tpow'), 'gpow': params.get('gpow'), 'qclip': params.get('qclip'), 'reason': reason})
+        if action == 'apply_gain': return toolkit.propose_gain({'scale': params.get('scale', 1.0), 'tpow': params.get('tpow', 0.0), 'gpow': params.get('gpow', 1.0), 'qclip': params.get('qclip', 1.0), 'reason': reason})
         if action == 'apply_agc': return toolkit.propose_agc({'wagc': params.get('wagc'), 'reason': reason})
         if action == 'select_traces': return toolkit.propose_trace_selection({'key': params.get('key'), 'min': params.get('min'), 'max': params.get('max'), 'reason': reason})
         if action == 'set_header_constant': return toolkit.propose_header_constant({'key': params.get('key'), 'value': params.get('value'), 'reason': reason})

@@ -19,12 +19,15 @@ class WorkflowEngine:
             project_root = output_path.parent.parent.resolve()
             project = SimpleNamespace(
                 root=project_root,
+                work_root=project_root,
+                uses_ram_workspace=False,
                 history_dir=project_root / 'history',
                 project_id=getattr(state, 'project_id', project_root.name),
+                path=lambda value: ensure_path_within(Path(value), project_root),
             )
-        project_root = Path(project.root).resolve()
-        input_path = ensure_path_within(input_path, project_root)
-        output_path = ensure_path_within(output_path, project_root)
+
+        input_path = project.path(input_path)
+        output_path = project.path(output_path)
 
         expected_output_bytes = max(1, input_path.stat().st_size * 2)
         try:
@@ -75,6 +78,7 @@ class WorkflowEngine:
             'output_bytes': output_path.stat().st_size,
             'command': command,
             'command_line': command_line,
+            'storage': 'ram' if getattr(project, 'uses_ram_workspace', False) else 'disk',
         }
         self.history.append(record)
         audit_event(
@@ -85,6 +89,7 @@ class WorkflowEngine:
                 'step_id': record['step_id'],
                 'duration_sec': record['duration_sec'],
                 'output_bytes': record['output_bytes'],
+                'storage': record['storage'],
             },
         )
         return record

@@ -47,6 +47,7 @@ class PendingIntentResolutionTests(unittest.TestCase):
         self.assertEqual(fast_pending_intent('cancel'), REJECT_PENDING)
         self.assertIsNone(fast_pending_intent('go ahead and apply such an AGC'))
         self.assertIsNone(fast_pending_intent('sounds good, do it'))
+        self.assertIsNone(fast_pending_intent('Apply the AGC using your suggested window'))
 
     def test_semantic_approval_authorizes_high_confidence_reference(self):
         provider = _FakeProvider({
@@ -65,6 +66,23 @@ class PendingIntentResolutionTests(unittest.TestCase):
         self.assertEqual(semantic_authorization(result), APPROVE_PENDING)
         self.assertIn('pending_action', provider.last_kwargs['input'])
 
+    def test_suggested_window_wording_authorizes_pending_agc(self):
+        provider = _FakeProvider({
+            'intent': APPROVE_PENDING,
+            'confidence': 0.82,
+            'references_pending': True,
+            'reason': 'The imperative explicitly applies the AGC with the previously suggested window.',
+        })
+        resolver = PendingIntentResolver(provider=provider)
+        result = resolver.resolve(
+            'Apply the AGC using your suggested window',
+            self.pending,
+            [{'role': 'assistant', 'content': 'I suggest wagc=0.5 s.'}],
+        )
+        self.assertEqual(result['intent'], APPROVE_PENDING)
+        self.assertTrue(result['references_pending'])
+        self.assertEqual(semantic_authorization(result), APPROVE_PENDING)
+
     def test_semantic_rejection_authorizes_high_confidence_reference(self):
         provider = _FakeProvider({
             'intent': REJECT_PENDING,
@@ -79,7 +97,7 @@ class PendingIntentResolutionTests(unittest.TestCase):
     def test_low_confidence_does_not_change_application_state(self):
         result = {
             'intent': APPROVE_PENDING,
-            'confidence': 0.72,
+            'confidence': 0.62,
             'references_pending': True,
         }
         self.assertIsNone(semantic_authorization(result))

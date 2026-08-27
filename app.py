@@ -368,13 +368,14 @@ def is_explicit_followup_confirmation(prompt, action):
     if named_terms and not (named_terms & expected_terms):
         return False
 
-    reference = r'(?:that|this|such|the\s+(?:recommended|proposed))?'
     operation = '|'.join(re.escape(term) for term in all_terms)
-    patterns = (
-        rf'^(?:yes\s+)?(?:go\s+)?(?:apply|run|execute)\s+{reference}\s*(?:{operation})?$',
-        rf'^(?:yes\s+)?(?:go\s+ahead\s+and\s+)(?:apply|run|execute)\s+{reference}\s*(?:{operation})?$',
+    reference = (
+        r'(?:(?:that|this|such)(?:\s+(?:a|an|the))?'
+        r'|the\s+(?:recommended|proposed|suggested)(?:\s+(?:a|an|the))?)?'
     )
-    return any(re.match(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+    lead = r'(?:yes\s+)?(?:(?:go\s+ahead\s+and|go)\s+)?'
+    pattern = rf'^{lead}(?:apply|run|execute)\s+{reference}\s*(?:{operation})?$'
+    return bool(re.match(pattern, text, flags=re.IGNORECASE))
 
 
 for key, default in [

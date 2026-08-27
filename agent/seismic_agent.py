@@ -167,18 +167,50 @@ class SeismicAgent:
     def _runtime_context(self, toolkit: AgentToolkit) -> str:
         project_id = getattr(getattr(toolkit, 'project', None), 'project_id', 'unknown')
         current_dataset = str(getattr(toolkit, 'current_path', 'unknown'))
+        pending = getattr(toolkit, 'pending_action', None)
+        pending_context = 'none'
+        if isinstance(pending, dict):
+            pending_context = json.dumps(
+                {
+                    'tool': pending.get('tool'),
+                    'display_name': pending.get('display_name'),
+                    'parameters': pending.get('parameters'),
+                    'status': pending.get('status'),
+                    'approval_policy': pending.get('approval_policy'),
+                },
+                ensure_ascii=False,
+            )
         return (
             '\n\nRuntime context supplied by the seismic application:\n'
             f'- A seismic dataset IS currently loaded for project {project_id}.\n'
             f'- Current dataset: {current_dataset}.\n'
+            f'- Current pending processing proposal: {pending_context}.\n'
             '- Never ask the user to upload/load the dataset again when the application has provided evidence.\n'
-            '- Treat application-provided inspection results as authoritative observations for this turn.\n'
+            '- Treat application-provided inspection results and pending-proposal state as authoritative observations for this turn.\n'
+            '- The application, not the model, decides whether a user utterance authorizes execution.\n'
+            '- Do not claim a processing action is unavailable merely because it is not exposed as a model function when the application has a pending proposal.\n'
             '- Do not claim that a processing operation was executed unless the application says it was executed.'
         )
 
-    def _run_openclaw_application_routed(self, user_text: str, toolkit: AgentToolkit, *, max_tool_rounds: int) -> dict[str, Any]:
+    @staticmethod
+    def _conversation_context(chat_history: list[dict[str, str]]) -> str:
+        recent = []
+        for message in chat_history[-10:]:
+            role = message.get('role')
+            content = str(message.get('content') or '').strip()
+            if role in {'user', 'assistant'} and content:
+                recent.append({'role': role, 'content': content})
+        if not recent:
+            return ''
+        return (
+            '\n\nRecent conversation supplied by the application. Use it only as conversational context; '
+            'application runtime state is authoritative:\n'
+            + json.dumps(recent, ensure_ascii=False, indent=2)
+        )
+
+    def _run_openclaw_application_routed(self, user_text: str, chat_history: list[dict[str, str]], toolkit: AgentToolkit, *, max_tool_rounds: int) -> dict[str, Any]:
         request_user = f"seismic-project-{getattr(toolkit.project, 'project_id', 'default')}"
-        runtime_context = self._runtime_context(toolkit)
+        runtime_context = self._runtime_context(toolkit) + self._conversation_context(chat_history)
         tool_trace: list[dict[str, Any]] = []
         routed = self._route_read_tool(user_text)
         evidence = None
@@ -345,5 +377,5 @@ class SeismicAgent:
 
     def run_turn(self, user_text: str, chat_history: list[dict[str, str]], toolkit: AgentToolkit, *, max_tool_rounds: int = 8) -> dict[str, Any]:
         if self.provider.name == 'openclaw' and getattr(self.provider, 'tool_strategy', 'application_routed') == 'application_routed':
-            return self._run_openclaw_application_routed(user_text, toolkit, max_tool_rounds=max_tool_rounds)
+            return self._run_openclaw_application_routed(user_text, chat_history, toolkit, max_tool_rounds=max_tool_rounds)
         return self._run_native_function_calling(user_text, chat_history, toolkit, max_tool_rounds=max_tool_rounds)

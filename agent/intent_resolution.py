@@ -102,7 +102,14 @@ class PendingIntentResolver:
             'input': json.dumps(payload, ensure_ascii=False),
         }
         if self.provider.name == 'openclaw' and request_user:
-            kwargs['user'] = request_user
+            # Keep semantic classification isolated from the main OpenClaw
+            # project conversation. Reusing the project session lets proposal
+            # and confirmation dialogue contaminate what should be a pure,
+            # one-turn authorization classification.
+            project_key = str(request_user)
+            if project_key.startswith('seismic-project-'):
+                project_key = project_key[len('seismic-project-'):]
+            kwargs['user'] = f'seismic-intent-{project_key}'
         response = self.provider.create_response(**kwargs)
         raw = (response.output_text or '').strip()
         try:

@@ -1,11 +1,17 @@
 from pathlib import Path
-import re
 import shutil
 import uuid
 import streamlit as st
 
 from version import VERSION
 from agent.seismic_agent import SeismicAgent, AgentConfigurationError
+from agent.intent_resolution import (
+    APPROVE_PENDING,
+    REJECT_PENDING,
+    PendingIntentResolver,
+    fast_pending_intent,
+    semantic_authorization,
+)
 from agent.knowledge_mode import run_knowledge_turn
 from agent.provider_factory import load_agent_config
 from agent.toolkit import AgentToolkit
@@ -146,8 +152,8 @@ def execute_pending_processing(project, state, history, engine, action):
     authorization = action.get('authorization')
     if authorization == 'explicit_user_command':
         reason = f"Explicit user command: {action.get('reason', '')}"
-    elif authorization == 'explicit_followup_confirmation':
-        reason = f"Explicit follow-up confirmation: {action.get('reason', '')}"
+    elif authorization == 'semantic_followup_confirmation':
+        reason = f"Semantic follow-up confirmation: {action.get('reason', '')}"
     else:
         reason = f"Agent proposal approved by user: {action.get('reason', '')}"
     rec = engine.run_processing_step(
@@ -315,67 +321,32 @@ def execute_authorized_action(prompt, action, project, state, history, engine, r
     )
 
 
-def is_explicit_followup_confirmation(prompt, action):
-    if not action or action.get('status') != 'pending_approval':
-        return False
-    spec = registry.get(action['tool'])
+def resolve_pending_followup(prompt, pending, project):
+    if not pending or pending.get('status') != 'pending_approval':
+        return None
+    spec = registry.get(pending['tool'])
     if spec.get('approval_policy') != 'explicit_or_approval':
-        return False
+        return None
 
-    text = re.sub(r'\s+', ' ', prompt.strip().lower()).strip(' .!')
-    generic_confirmations = {
-        'yes',
-        'yes go ahead',
-        'go ahead',
-        'proceed',
-        'do it',
-        'run it',
-        'execute it',
-        'apply it',
-        'go apply it',
-        'go run it',
-        'go execute it',
-        'go ahead and do it',
-        'go ahead and run it',
-        'go ahead and execute it',
-        'go ahead and apply it',
-    }
-    if text in generic_confirmations:
-        return True
+    fast_intent = fast_pending_intent(prompt)
+    if fast_intent is not None:
+        return {
+            'intent': fast_intent,
+            'confidence': 1.0,
+            'references_pending': True,
+            'reason': 'Deterministic fast-path for an unambiguous one-word authorization.',
+            'source': 'fast_path',
+        }
 
-    tool_terms = {
-        'sufilter': {'filter', 'bandpass'},
-        'sugain': {'gain'},
-        'suagc': {'agc'},
-        'suwind': {'selection', 'trace selection', 'suwind'},
-        'susort': {'sort', 'sorting'},
-        'suresamp': {'resample', 'resampling'},
-        'sumute': {'mute'},
-        'sustack': {'stack', 'stacking'},
-        'supef': {'decon', 'deconvolution', 'pef'},
-        'sunmo': {'nmo', 'moveout'},
-    }
-    expected_terms = tool_terms.get(action.get('tool'), set())
-    all_terms = sorted(
-        {term for terms in tool_terms.values() for term in terms},
-        key=len,
-        reverse=True,
+    resolver = PendingIntentResolver()
+    result = resolver.resolve(
+        prompt,
+        pending,
+        _prior_chat_for_prompt(prompt),
+        request_user=f'seismic-project-{project.project_id}',
     )
-    named_terms = {
-        term for term in all_terms
-        if re.search(rf'\b{re.escape(term)}\b', text)
-    }
-    if named_terms and not (named_terms & expected_terms):
-        return False
-
-    operation = '|'.join(re.escape(term) for term in all_terms)
-    reference = (
-        r'(?:(?:that|this|such)(?:\s+(?:a|an|the))?'
-        r'|the\s+(?:recommended|proposed|suggested)(?:\s+(?:a|an|the))?)?'
-    )
-    lead = r'(?:yes\s+)?(?:(?:go\s+ahead\s+and|go)\s+)?'
-    pattern = rf'^{lead}(?:apply|run|execute)\s+{reference}\s*(?:{operation})?$'
-    return bool(re.match(pattern, text, flags=re.IGNORECASE))
+    result['source'] = 'llm_semantic_intent'
+    return result
 
 
 for key, default in [
@@ -384,6 +355,7 @@ for key, default in [
     ('pending_user_prompt', None),
     ('last_tool_trace', []),
     ('last_reflection', None),
+    ('last_intent_resolution', None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -534,35 +506,71 @@ queued_prompt = st.session_state.pop('pending_user_prompt', None)
 if queued_prompt:
     with st.spinner('Agent is working...'):
         pending = st.session_state.get('pending_action')
-        if is_explicit_followup_confirmation(queued_prompt, pending):
+        if pending:
             try:
-                action = dict(pending)
-                action['authorization'] = 'explicit_followup_confirmation'
-                execute_authorized_action(
-                    queued_prompt,
-                    action,
-                    project,
-                    state,
-                    history,
-                    engine,
-                    routed_by='explicit_followup_confirmation',
-                )
-                st.rerun()
+                intent_result = resolve_pending_followup(queued_prompt, pending, project)
             except Exception as exc:
+                intent_result = {
+                    'intent': 'ambiguous',
+                    'confidence': 0.0,
+                    'references_pending': False,
+                    'reason': f'Semantic intent resolution failed: {exc}',
+                    'source': 'resolver_error',
+                }
+            st.session_state.last_intent_resolution = intent_result
+            if intent_result is not None:
                 audit_event(
                     project,
-                    'followup_authorization_rejected',
-                    severity='warning',
-                    details={'error': str(exc), 'tool': (pending or {}).get('tool')},
+                    'pending_followup_intent_resolved',
+                    details={
+                        'tool': pending.get('tool'),
+                        'intent': intent_result.get('intent'),
+                        'confidence': intent_result.get('confidence'),
+                        'references_pending': intent_result.get('references_pending'),
+                        'source': intent_result.get('source'),
+                    },
                 )
-                st.session_state.chat_messages.append({
-                    'role': 'assistant',
-                    'content': (
-                        'I recognized your follow-up as authorization for the pending proposal, '
-                        f'but execution failed validation: `{exc}`. No processing was run.'
-                    ),
-                })
-                st.rerun()
+                authorization = semantic_authorization(intent_result)
+                if authorization == APPROVE_PENDING:
+                    try:
+                        action = dict(pending)
+                        action['authorization'] = 'semantic_followup_confirmation'
+                        execute_authorized_action(
+                            queued_prompt,
+                            action,
+                            project,
+                            state,
+                            history,
+                            engine,
+                            routed_by='semantic_pending_authorization',
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        audit_event(
+                            project,
+                            'semantic_followup_authorization_rejected',
+                            severity='warning',
+                            details={'error': str(exc), 'tool': pending.get('tool')},
+                        )
+                        st.session_state.chat_messages.append({
+                            'role': 'assistant',
+                            'content': (
+                                'I understood your message as authorization for the pending '
+                                f'proposal, but application validation rejected execution: `{exc}`. '
+                                'No processing was run.'
+                            ),
+                        })
+                        st.rerun()
+                if authorization == REJECT_PENDING:
+                    st.session_state.pending_action = None
+                    st.session_state.chat_messages.append({
+                        'role': 'assistant',
+                        'content': (
+                            f"The pending {pending.get('display_name', pending.get('tool', 'processing'))} "
+                            'proposal was rejected from your follow-up message. No processing was run.'
+                        ),
+                    })
+                    st.rerun()
 
         explicit_command = parse_explicit_user_command(queued_prompt)
         if explicit_command is not None:
@@ -678,6 +686,7 @@ if new_project_requested:
         'pending_user_prompt',
         'last_tool_trace',
         'last_reflection',
+        'last_intent_resolution',
         'workspace_page',
         'dataset_lineage_pills',
         'dataset_lineage_active_step',

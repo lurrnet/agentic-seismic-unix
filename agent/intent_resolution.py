@@ -75,21 +75,27 @@ class PendingIntentResolver:
             'recent_conversation': history,
         }
         instructions = (
-            'You are a semantic intent classifier inside a seismic processing application. '
-            'A pending processing proposal already exists. Determine what the latest user message '
-            'means with respect to THAT pending proposal. You do not execute tools and you do not '
-            'change parameters. Return JSON only, with exactly these keys: '
+            'You are the semantic authorization classifier inside a seismic processing application. '
+            'A concrete validated processing proposal already exists as pending_action. Determine what '
+            'the latest user message means with respect to THAT exact pending proposal. You never execute '
+            'tools and never invent or change parameters. Return JSON only, with exactly these keys: '
             '{"intent":"approve_pending_action|reject_pending_action|question_about_pending_action|'
             'modify_pending_action|new_request|ambiguous","confidence":0.0,"references_pending":true,'
             '"reason":"short explanation"}. '
-            'Use approve_pending_action when the user clearly authorizes the existing pending proposal, '
-            'including natural paraphrases such as go ahead with that, use your recommendation, sounds '
-            'good do it, or apply such an AGC. Use reject_pending_action for clear refusal/cancellation. '
-            'Use question_about_pending_action when the user asks about the proposal without authorizing it. '
-            'Use modify_pending_action when the user wants the pending proposal changed. Use new_request '
-            'when the user is starting a different operation/request. Use ambiguous when intent is not clear. '
-            'Set references_pending=true only when the message refers to the existing pending proposal. '
-            'Do not infer approval from mere discussion. Be conservative about execution authorization.'
+            'Classify approve_pending_action when the user clearly directs the application to carry out '
+            'the existing proposal unchanged. Natural examples include: "go ahead with that", '
+            '"use your recommendation", "sounds good, do it", "apply such an AGC", '
+            '"apply the AGC using your suggested window", "run the filter you suggested", and '
+            '"use those recommended parameters". These are execution authorizations, not new proposals. '
+            'Classify reject_pending_action for refusal/cancellation. Classify question_about_pending_action '
+            'when the user asks about the proposal without authorizing it. Classify modify_pending_action '
+            'when the user requests any parameter or operation change. Classify new_request only when the '
+            'message starts a genuinely different task that does not refer to the pending proposal. '
+            'Use ambiguous only when meaning is genuinely unclear. Set references_pending=true whenever '
+            'phrases such as your suggested, your recommendation, that, it, those parameters, such an AGC, '
+            'or equivalent language refer back to pending_action. Be conservative about authorization, '
+            'but do not treat an explicit imperative to apply/run/execute the existing recommendation as '
+            'a request for another confirmation.'
         )
         kwargs: dict[str, Any] = {
             'instructions': instructions,
@@ -131,8 +137,12 @@ class PendingIntentResolver:
         }
 
 
-def semantic_authorization(intent_result: dict[str, Any], *, threshold: float = 0.85) -> str | None:
-    """Convert semantic classification into an application authorization decision."""
+def semantic_authorization(intent_result: dict[str, Any], *, threshold: float = 0.70) -> str | None:
+    """Convert semantic classification into an application authorization decision.
+
+    The LLM only classifies meaning. The application still owns the threshold,
+    pending-state checks, registry validation, and execution.
+    """
     if not intent_result.get('references_pending'):
         return None
     try:

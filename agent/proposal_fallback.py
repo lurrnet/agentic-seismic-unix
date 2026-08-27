@@ -43,11 +43,40 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
 
     if action == 'apply_gain':
         values = {}
-        for key in ('tpow', 'gpow', 'qclip'):
+        for key in ('scale', 'tpow', 'gpow', 'qclip'):
             match = re.search(rf'\b{key}\s*[:=]\s*(-?[0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
-            if match: values[key] = float(match.group(1))
-        if all(key in values for key in ('tpow', 'gpow', 'qclip')):
-            return {'action': action, 'parameters': values, 'reason': 'Gain parameters parsed from text.', 'parsed_from': 'gain_labels'}
+            if match:
+                values[key] = float(match.group(1))
+        if any(key in values for key in ('scale', 'tpow', 'gpow', 'qclip')):
+            return {
+                'action': action,
+                'parameters': {
+                    'scale': values.get('scale', 1.0),
+                    'tpow': values.get('tpow', 0.0),
+                    'gpow': values.get('gpow', 1.0),
+                    'qclip': values.get('qclip', 1.0),
+                },
+                'reason': 'Gain parameters parsed from text.',
+                'parsed_from': 'gain_labels',
+            }
+        scalar = re.search(
+            r'\b(?:gain(?:\s+of)?|multiply(?:\s+(?:the\s+)?(?:data|amplitude))?\s+by|scale(?:\s+by)?)\s+' 
+            r'(-?[0-9]+(?:\.[0-9]+)?)\s*(?:x|times)?\b',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if scalar:
+            return {
+                'action': action,
+                'parameters': {
+                    'scale': float(scalar.group(1)),
+                    'tpow': 0.0,
+                    'gpow': 1.0,
+                    'qclip': 1.0,
+                },
+                'reason': 'Scalar gain parsed from explicit user command.',
+                'parsed_from': 'scalar_gain',
+            }
 
     if action == 'select_traces':
         key_match = re.search(r'\b(?:key\s*[:=]\s*)?(fldr|tracf|cdp|offset|sx|sy|gx|gy|tracl|tracr)\b', text, flags=re.IGNORECASE)
@@ -81,13 +110,49 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
         ntaper = re.search(r'\bntaper\s*[:=]\s*([0-9]+)', text, flags=re.IGNORECASE)
         mode_match = re.search(r'\bmode\s*[:=]\s*([01])\b', text, flags=re.IGNORECASE)
         if not mode_match:
-            if re.search(r'\b(?:top|above)\s+mute\b', text, flags=re.IGNORECASE): mode = 0
-            elif re.search(r'\b(?:bottom|below)\s+mute\b', text, flags=re.IGNORECASE): mode = 1
-            else: mode = None
+            if re.search(r'\b(?:top|above)\s+mute\b', text, flags=re.IGNORECASE):
+                mode = 0
+            elif re.search(r'\b(?:bottom|below)\s+mute\b', text, flags=re.IGNORECASE):
+                mode = 1
+            else:
+                mode = None
         else:
             mode = int(mode_match.group(1))
         if key and xmute and tmute and mode is not None:
             return {'action': action, 'parameters': {'key': key.group(1).lower(), 'xmute': _number_list(xmute.group(1)), 'tmute': _number_list(tmute.group(1)), 'mode': mode, 'ntaper': int(ntaper.group(1)) if ntaper else 0}, 'reason': 'Mute parameters parsed from text.', 'parsed_from': 'mute_labels'}
+
+        simple = re.search(
+            r'\bmute\b.*?\b(above|before|top|below|after|bottom)\b.*?'
+            r'([0-9]+(?:\.[0-9]+)?)\s*(ms|msec|milliseconds?|s|sec|secs|seconds?)\b',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if not simple:
+            simple = re.search(
+                r'\b(above|before|top|below|after|bottom)\b.*?'
+                r'([0-9]+(?:\.[0-9]+)?)\s*(ms|msec|milliseconds?|s|sec|secs|seconds?)\b.*?\bmute\b',
+                text,
+                flags=re.IGNORECASE,
+            )
+        if simple:
+            direction = simple.group(1).lower()
+            mute_time = float(simple.group(2))
+            unit = simple.group(3).lower()
+            if unit.startswith('m'):
+                mute_time /= 1000.0
+            mode = 0 if direction in ('above', 'before', 'top') else 1
+            return {
+                'action': action,
+                'parameters': {
+                    'key': 'tracl',
+                    'xmute': [0.0, 1.0],
+                    'tmute': [mute_time, mute_time],
+                    'mode': mode,
+                    'ntaper': 0,
+                },
+                'reason': 'Constant whole-line mute parsed from explicit user command.',
+                'parsed_from': 'simple_constant_mute',
+            }
 
     if action == 'stack_traces':
         key = re.search(r'\b(?:by|key\s*[:=]\s*)(cdp|fldr|ep)\b', text, flags=re.IGNORECASE)
@@ -107,7 +172,7 @@ def parse_proposal_from_text(action: str, text: str) -> dict[str, Any] | None:
         vnmo = re.search(r'\bvnmo\s*[:=]\s*([0-9.,\s]+)', text, flags=re.IGNORECASE)
         smute = re.search(r'\bsmute\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text, flags=re.IGNORECASE)
         lmute = re.search(r'\blmute\s*[:=]\s*([0-9]+)', text, flags=re.IGNORECASE)
-        sscale = re.search(r'\bsscale\s*[:=]\s*([01])', text, flags=re.IGNORECASE)
+        sscale = re.search(r'\bsscale\s*[:=]\s*([01])\b', text, flags=re.IGNORECASE)
         if tnmo and vnmo:
             return {'action': action, 'parameters': {'tnmo': _number_list(tnmo.group(1)), 'vnmo': _number_list(vnmo.group(1)), 'smute': float(smute.group(1)) if smute else 1.5, 'lmute': int(lmute.group(1)) if lmute else 25, 'sscale': int(sscale.group(1)) if sscale else 1}, 'reason': 'NMO parameters parsed from text.', 'parsed_from': 'nmo_labels'}
 
@@ -121,16 +186,30 @@ def parse_explicit_user_command(text: str) -> dict[str, Any] | None:
         return None
 
     action = None
-    if re.search(r'\b(?:apply|run|execute)\b.*\b(?:bandpass|filter)\b', lowered): action = 'apply_bandpass_filter'
-    elif re.search(r'\b(?:apply|run|execute)\b.*\bagc\b', lowered) or ('automatic gain control' in lowered and re.search(r'\b(?:apply|run|execute)\b', lowered)): action = 'apply_agc'
-    elif re.search(r'\b(?:apply|run|execute)\b.*\bgain\b', lowered): action = 'apply_gain'
-    elif re.search(r'\b(?:select|keep|retain|window)\b.*\b(?:trace|traces|offset|cdp|fldr)\b', lowered): action = 'select_traces'
-    elif re.search(r'\b(?:sort|order)\b.*\b(?:by|key)\b', lowered): action = 'sort_dataset'
-    elif re.search(r'\b(?:resample|resampling)\b', lowered): action = 'resample_dataset'
-    elif re.search(r'\b(?:apply|run|execute)\b.*\bmute\b', lowered): action = 'apply_mute'
-    elif re.search(r'\b(?:stack|stacking)\b.*\b(?:by|key|cdp|fldr|ep)\b', lowered): action = 'stack_traces'
-    elif re.search(r'\b(?:apply|run|execute)\b.*\b(?:decon|deconvolution|pef|predictive error filter)\b', lowered): action = 'apply_predictive_decon'
-    elif re.search(r'\b(?:apply|run|execute)\b.*\b(?:nmo|normal moveout|moveout correction)\b', lowered): action = 'apply_nmo'
+    if re.search(r'\b(?:apply|run|execute)\b.*\b(?:bandpass|filter)\b', lowered):
+        action = 'apply_bandpass_filter'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\bagc\b', lowered) or ('automatic gain control' in lowered and re.search(r'\b(?:apply|run|execute)\b', lowered)):
+        action = 'apply_agc'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\bgain\b', lowered) or re.search(r'\b(?:multiply|scale)\b.*\b(?:by|gain)\b', lowered):
+        action = 'apply_gain'
+    elif re.search(r'\b(?:select|keep|retain|window)\b.*\b(?:trace|traces|offset|cdp|fldr)\b', lowered):
+        action = 'select_traces'
+    elif re.search(r'\b(?:sort|order)\b.*\b(?:by|key)\b', lowered):
+        action = 'sort_dataset'
+    elif re.search(r'\b(?:resample|resampling)\b', lowered):
+        action = 'resample_dataset'
+    elif re.search(r'\bmute\b', lowered) and (
+        re.search(r'\b(?:apply|run|execute)\b', lowered)
+        or re.search(r'\b(?:above|before|top|below|after|bottom)\b', lowered)
+        or re.search(r'\b(?:xmute|tmute|mode)\b', lowered)
+    ):
+        action = 'apply_mute'
+    elif re.search(r'\b(?:stack|stacking)\b.*\b(?:by|key|cdp|fldr|ep)\b', lowered):
+        action = 'stack_traces'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\b(?:decon|deconvolution|pef|predictive error filter)\b', lowered):
+        action = 'apply_predictive_decon'
+    elif re.search(r'\b(?:apply|run|execute)\b.*\b(?:nmo|normal moveout|moveout correction)\b', lowered):
+        action = 'apply_nmo'
 
     if action is None:
         return None
